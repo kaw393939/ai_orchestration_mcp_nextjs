@@ -1,16 +1,20 @@
 # Language as Executable Architecture
 
-This repository is now organized as a working companion to a book on prompt orchestration and AI-native software engineering.  
-Core thesis: language is no longer only documentation—it is an operational control surface for building, auditing, and evolving production systems.
+This repository is a working companion to a book on professional software engineering in the AI era.
+
+Most CS programs teach you how to make things work. This book teaches the layer they skip: how to make things *keep working* — under change, under team growth, and under operational pressure. That layer is what separates engineers who remain valuable as AI automates the mechanical work from engineers whose skills have been absorbed into a prompt.
 
 ## Intro
 
-This book connects four layers into one practical method:
+The junior engineering role is shrinking. The work AI cannot replace requires design judgment, operational discipline, and architectural thinking. These skills were always the difference between code that survives and code that collapses — they just matter more now, sooner in a career.
 
-- Prompt orchestration as an engineering discipline
-- Classical software design (GoF, SOLID, 12-Factor) adapted to AI workflows
-- Historical and theoretical foundations of programming-language evolution
-- Real implementation loops: audit -> sprint -> refactor -> validate
+This book teaches those skills through the stories of the people who built the frameworks, and through a real working codebase that applies every principle with verifiable evidence:
+
+- **GoF design patterns** — who built them, what was breaking, and how they apply to AI-native systems
+- **SOLID principles** — the field notes of a developer who spent decades cleaning up code that was unmaintainable by design
+- **12-Factor operational discipline** — what Heroku learned from thousands of production failures, applied to LLM-backed applications
+- **MCP + Next.js** — the architecture pairing that gives AI systems deterministic, inspectable tool execution
+- **Prompt orchestration as engineering** — how to move beyond ad hoc prompting into repeatable, auditable execution loops
 
 The chapters are written to be both conceptual and executable in this codebase.
 
@@ -54,7 +58,7 @@ docker compose up --build
 ## Table of Contents
 
 0. [Chapter 0 - The People Behind the Principles](docs/book/chapters/ch00-the-people-behind-the-principles.md)  
-	Abstract: Tells the human stories behind GoF, SOLID, 12-Factor, TDD, and MCP — who these people were, what frustrated them, and how their work converges in this project.
+	Abstract: Explains why the professional craft layer of software engineering is rarely taught, why AI makes that gap critical, and tells the human stories behind GoF, SOLID, 12-Factor, TDD, and MCP — who these people were, what frustrated them, and what they built.
 
 1. [Chapter 1 - Why This Moment Matters](docs/book/chapters/ch01-why-this-moment-matters.md)  
 	Abstract: Defines why LLM systems change engineering practice, and introduces the central claim that words now function as programmable intent.

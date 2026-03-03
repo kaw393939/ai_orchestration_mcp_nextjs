@@ -1,7 +1,27 @@
 # Chapter 0 - The People Behind the Principles
 
 ## Abstract
-Every framework in this book was invented by a person who was frustrated. Understanding who they were, what broke, and why they cared makes the principles easier to remember and harder to misapply. This chapter tells those stories.
+Every framework in this book was invented by a person who was frustrated. Understanding who they were, what broke, and why they cared makes the principles easier to remember and harder to misapply. This chapter tells those stories — and explains why knowing them is no longer optional for anyone who wants to work as a software engineer.
+
+---
+
+## What Universities Don't Teach and Why It Now Matters More Than Ever
+
+Most computer science programs teach you how to make things work. Algorithms. Data structures. Theory. The fundamentals are real and they matter. But there is a second layer of software engineering — the professional craft layer — that most curricula skip entirely: how to make things *keep working* under change, team growth, and operational pressure.
+
+This layer includes design patterns, SOLID principles, 12-factor operational discipline, test-driven development, and the kind of architectural judgment that separates code that survives from code that collapses. These ideas are almost never taught formally. Students encounter them, if at all, as electives or in their first job when a senior engineer points at their code and explains what went wrong.
+
+For a long time, this gap was tolerable. Junior roles existed to give new engineers time to absorb professional practice on the job. Companies hired people to implement specs, write boilerplate, and fix straightforward bugs while developing judgment over two or three years.
+
+AI has eliminated most of that buffer.
+
+The mechanical work that once defined junior roles — generating implementations, translating requirements into code, writing repetitive tests — is now faster and cheaper to do with AI than with a person. What remains for human engineers is the work AI does poorly: deciding what to build, recognizing structural problems before they become expensive, making tradeoffs across time and team scale, and auditing AI-generated output for the kind of subtle architectural fragility that looks fine today and fails in six months.
+
+That is exactly the professional craft layer that universities skip.
+
+The result is a compression of the career ladder. The engineers who remain valuable are the ones who already operate at the level that used to be expected of mid-level and senior practitioners — not because they are older or more experienced, but because they understand the principles that govern whether a system stays maintainable. The engineers who don't have this knowledge face a market where the tasks they are prepared to do are increasingly automated and the tasks that remain require skills they were never taught.
+
+This book was written to close that gap. Not through abstract theory, but through the stories of the people who built these frameworks, the specific problems they were solving, and the evidence of their ideas applied to a real working system.
 
 ---
 
