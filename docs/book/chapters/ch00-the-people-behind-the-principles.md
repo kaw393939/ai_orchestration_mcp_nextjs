@@ -268,9 +268,29 @@ Chapter 13 of this book is dedicated to MCP's architecture and what it enables w
 
 ---
 
+## Jack Clark and the Case for AI Governance Transparency (2016–present)
+
+**Jack Clark** co-founded Anthropic with Dario and Daniela Amodei after several years running AI policy at OpenAI. Before Anthropic, he spent enough time watching model capabilities compound week over week to believe that the gap between what the systems could do and what anyone — inside the companies or outside — actually understood about them was becoming dangerous.
+
+In 2016 he started *Import AI*, a weekly newsletter tracking advances in machine learning research. Not product launches. Research: capability jumps, benchmark surprises, techniques that would matter in three years. It became required reading for anyone trying to stay calibrated about what was actually developing in the field rather than what the press releases announced.
+
+His thesis, stated plainly: as AI systems generate more and more of the code in the world, the question is no longer whether the code *works* but whether anyone has visibility into how rapidly the codebase is changing, what patterns are appearing, and where a governance regime can tell the machines to slow down. "We are going to end up developing some notion of integrity of all of our systems," he said in 2026, "and where AI can kind of flow quickly, where it should be slow, where you definitely need human oversight. That is going to be the task — figuring out what does this governance regime look like now that we've given a load of basically schlep work over to machines that work on our behalf."
+
+He named this problem before it had a common vocabulary in the industry. The word he kept returning to was *oversight* — not in the bureaucratic sense but in the engineering sense: a monitoring system that makes the behavior of AI-assisted development *observable*. He described O-ring automation: "Automation is bounded by the slowest link in the chain. As you automate parts of a company, humans flood towards what is least automated, both improving the quality of that thing and getting it to the point where it eventually can be automated. Then you move to the next loop." The discipline shifts from writing code to identifying bottlenecks.
+
+He was also honest about the part that companies knew but had not said clearly: when Claude Code was writing the majority of code at Anthropic, engineers understood the codebase less well than before. "This is the issue that all of society is going to contend with," he said. "Large chunks of the world are going to now have many of the low-level decisions and bits of work being done by AI systems, and we're going to need to make sense of it."
+
+He also named the transition that everyone in software was living through: "The AI applications of 2023 and 2024 were talkers. Some were very sophisticated conversationalists, but their impact was limited. The AI applications of 2026 and 2027 will be doers. They're agents plural. They can work together. They can oversee each other." Designing for *doers* is what MCP, typed contracts, and composite governance gates are for.
+
+The deterministic tools described in Chapter 9 — TypeScript strict mode, ESLint at zero-warnings tolerance, Lighthouse at score thresholds — are a direct response to the problem Clark named. They do not replace human oversight. They make the codebase observable enough that oversight is possible.
+
+**What frustrated him:** The assumption that publishing a safety paper was equivalent to having a safety system. The gap between what AI companies said they knew about their models' behavior and what anyone could actually verify from the outside.
+
+---
+
 ## The Thread
 
-Span the timeline. Hoare in 1965. Dijkstra in 1968. Knuth in 1968. Brooks in 1975. Liskov in 1987. Cunningham in 1992. The Gang of Four in 1994. Beck and Fowler in the late 1990s. Martin through the 2000s. Wiggins in 2011. Hejlsberg and Zakas in 2012–2013. Anthropic and MCP in 2023.
+Span the timeline. Hoare in 1965. Dijkstra in 1968. Knuth in 1968. Brooks in 1975. Liskov in 1987. Cunningham in 1992. The Gang of Four in 1994. Beck and Fowler in the late 1990s. Martin through the 2000s. Wiggins in 2011. Hejlsberg and Zakas in 2012–2013. Clark and *Import AI* from 2016. Anthropic and MCP in 2023.
 
 Six decades of practitioners observing failures, building vocabulary, and handing it forward.
 

@@ -39,6 +39,10 @@ AI-assisted development introduces a velocity problem governance frameworks were
 
 The answer is not slower AI. The answer is deterministic tools — tools that evaluate every change at machine speed, apply consistent criteria, and fail the build before anything reaches human review or production.
 
+Jack Clark, Anthropic co-founder and author of the *Import AI* newsletter, was asked in 2026 what his company was actually doing about the technical debt accumulating from AI-generated code. His answer: *"Yes. And this is the issue that all of society is going to contend with. Large chunks of the world are going to now have many of the low-level decisions and bits of work being done by AI systems, and we're going to need to make sense of it."* He described the governance response in engineering terms — not a policy document, but *oversight technologies*: monitoring systems that make AI-assisted development observable so that human judgment can be applied at the points where it still matters. He invoked O-ring automation: "Automation is bounded by the slowest link in the chain. As you automate parts of a company, humans flood towards what is least automated." The bottleneck shifts from code production to code *verification*. The governance layer has to operate at machine speed, or it cannot function.
+
+That is what the three-tool composite below provides.
+
 This project enforces three layers:
 
 ### TypeScript Strict Mode

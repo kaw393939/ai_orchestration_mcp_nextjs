@@ -3,6 +3,14 @@
 ## Abstract
 This chapter explains what MCP is, how it works in this project, why pairing MCP with Next.js creates high leverage, and which capabilities should be added next for maximum audience and product value.
 
+## From Talkers to Doers
+
+Jack Clark, co-founder of Anthropic and author of the *Import AI* newsletter, described the current moment with unusual precision: *"The AI applications of 2023 and 2024 were talkers. Some were very sophisticated conversationalists, but their impact was limited. The AI applications of 2026 and 2027 will be doers. They're agents plural. They can work together. They can oversee each other."*
+
+This project sits at that transition. The chat interface and MCP calculator in this repository are not just a demo — they are the minimal architecture that makes the shift from talking to doing legible. The model reasons. The MCP tool executes. The Next.js layer orchestrates. Understanding that three-way separation is the prerequisite for building reliable agentic systems.
+
+Clark also named the failure mode that trips people when they first try to get a model to do real work: treating it as a knowledgeable colleague rather than an extremely literal executor that takes instructions for a long time without checking back. *"The message better be extremely detailed and really capture what you're trying to do. It's making sure that you've set it up so it's like a message in a bottle that you can chuck into the thing and it'll go away and do a lot of work."* MCP tool schemas are that message. They are not boilerplate. They are the typed contract that makes a model's instructions precise enough to execute reliably — the difference between a tool that works and a tool that works *predictably*.
+
 ## What MCP Is
 Model Context Protocol (MCP) is a standard interface for exposing tools and resources to models.  
 At a practical level, MCP gives you a contract so model-driven tool use is explicit, typed, and interoperable.

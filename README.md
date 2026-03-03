@@ -60,7 +60,7 @@ docker compose up --build
 ## Table of Contents
 
 0. [Chapter 0 - The People Behind the Principles](docs/book/chapters/ch00-the-people-behind-the-principles.md)  
-	Abstract: Tells the human stories behind six decades of software engineering wisdom: Hoare, Dijkstra, Knuth, Brooks, Liskov, Cunningham, the Gang of Four, Beck, Fowler, Martin, Wiggins, Hejlsberg (TypeScript), Zakas (ESLint), and the Anthropic team. Who they were, what was breaking, what vocabulary they built, and how it all connects to the system in this repository.
+	Abstract: Tells the human stories behind six decades of software engineering wisdom: Hoare, Dijkstra, Knuth, Brooks, Liskov, Cunningham, the Gang of Four, Beck, Fowler, Martin, Wiggins, Hejlsberg (TypeScript), Zakas (ESLint), Clark (Import AI, governance transparency), and the Anthropic team. Who they were, what was breaking, what vocabulary they built, and how it all connects to the system in this repository.
 
 1. [Chapter 1 - Why This Moment Matters](docs/book/chapters/ch01-why-this-moment-matters.md)  
 	Abstract: Defines why LLM systems change engineering practice, and introduces the central claim that words now function as programmable intent.
