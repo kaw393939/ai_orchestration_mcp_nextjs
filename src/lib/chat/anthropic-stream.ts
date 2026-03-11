@@ -1,7 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelCandidates } from "@/lib/chat/policy";
-import { createToolResults } from "@/lib/chat/tools";
-import type { RoleName } from "@/core/entities/user";
 
 export interface StreamCallbacks {
   onDelta?: (text: string) => void;
@@ -17,7 +15,7 @@ export async function runClaudeAgentLoopStream({
   signal,
   systemPrompt,
   tools,
-  role,
+  toolExecutor,
 }: {
   apiKey: string;
   messages: Anthropic.MessageParam[];
@@ -26,7 +24,7 @@ export async function runClaudeAgentLoopStream({
   signal?: AbortSignal;
   systemPrompt: string;
   tools: Anthropic.Tool[];
-  role?: RoleName;
+  toolExecutor: (name: string, input: Record<string, unknown>) => Promise<unknown>;
 }): Promise<void> {
   const models = getModelCandidates();
   const model = models[0]; // fallback, but ideally we check candidates
@@ -85,22 +83,28 @@ export async function runClaudeAgentLoopStream({
 
     const toolResultContents: Anthropic.ToolResultBlockParam[] = [];
 
-    // Execute tools and collect results
-    // We execute them sequentially to capture output, or we can use the existing createToolResults
-    const generatedResults = await createToolResults(toolUseBlocks, role);
-
-    // Fire callbacks and format results
+    // Execute tools through the middleware-wrapped executor
     for (let i = 0; i < toolUseBlocks.length; i++) {
       const use = toolUseBlocks[i];
-      const res = generatedResults[i];
-
       const args = use.input as Record<string, unknown>;
       callbacks.onToolCall?.(use.name, args);
 
-      // We know our createToolResults returns an array parallel to toolUses
-      let finalResult: unknown = res.content;
+      let res: Anthropic.Messages.ToolResultBlockParam;
+      try {
+        const result = await toolExecutor(use.name, args);
+        const content = typeof result === "string" ? result : JSON.stringify(result);
+        res = { type: "tool_result" as const, tool_use_id: use.id, content };
+      } catch (error) {
+        res = {
+          type: "tool_result" as const,
+          tool_use_id: use.id,
+          content: error instanceof Error ? error.message : "Tool execution failed.",
+          is_error: true,
+        };
+      }
 
-      // Try parsing JSON if our tool outputted JSON, else just text
+      // Parse result for callback
+      let finalResult: unknown = res.content;
       if (typeof res.content === "string") {
         try {
           finalResult = JSON.parse(res.content);

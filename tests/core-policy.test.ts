@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ChatPolicyInteractor } from "@/core/use-cases/ChatPolicyInteractor";
-import { getToolNamesForRole } from "@/core/use-cases/ToolAccessPolicy";
+import { getToolRegistry } from "@/lib/chat/tool-composition-root";
 
 describe("ChatPolicyInteractor", () => {
   const basePrompt = "You are an advisor.";
@@ -29,37 +29,41 @@ describe("ChatPolicyInteractor", () => {
   });
 });
 
-describe("ToolAccessPolicy", () => {
-  it("ANONYMOUS gets exactly 6 whitelisted tools", () => {
-    const tools = getToolNamesForRole("ANONYMOUS");
-    expect(tools).not.toBe("ALL");
-    expect(tools).toHaveLength(6);
-    expect(tools).toContain("calculator");
-    expect(tools).toContain("search_books");
-    expect(tools).toContain("get_book_summary");
-    expect(tools).toContain("set_theme");
-    expect(tools).toContain("navigate");
-    expect(tools).toContain("adjust_ui");
+describe("ToolRegistry RBAC", () => {
+  const registry = getToolRegistry();
+
+  it("ANONYMOUS gets exactly 6 tool schemas", () => {
+    const schemas = registry.getSchemasForRole("ANONYMOUS");
+    expect(schemas).toHaveLength(6);
+    const names = schemas.map((s) => s.name);
+    expect(names).toContain("calculator");
+    expect(names).toContain("search_books");
+    expect(names).toContain("get_book_summary");
+    expect(names).toContain("set_theme");
+    expect(names).toContain("navigate");
+    expect(names).toContain("adjust_ui");
   });
 
-  it("ANONYMOUS does not get content or audio tools", () => {
-    const tools = getToolNamesForRole("ANONYMOUS") as string[];
-    expect(tools).not.toContain("get_chapter");
-    expect(tools).not.toContain("get_checklist");
-    expect(tools).not.toContain("generate_audio");
-    expect(tools).not.toContain("generate_chart");
-    expect(tools).not.toContain("list_practitioners");
+  it("ANONYMOUS cannot execute restricted tools", () => {
+    expect(registry.canExecute("get_chapter", "ANONYMOUS")).toBe(false);
+    expect(registry.canExecute("get_checklist", "ANONYMOUS")).toBe(false);
+    expect(registry.canExecute("generate_audio", "ANONYMOUS")).toBe(false);
+    expect(registry.canExecute("generate_chart", "ANONYMOUS")).toBe(false);
+    expect(registry.canExecute("list_practitioners", "ANONYMOUS")).toBe(false);
   });
 
-  it("AUTHENTICATED gets ALL tools", () => {
-    expect(getToolNamesForRole("AUTHENTICATED")).toBe("ALL");
+  it("AUTHENTICATED gets all 11 tool schemas", () => {
+    const schemas = registry.getSchemasForRole("AUTHENTICATED");
+    expect(schemas).toHaveLength(11);
   });
 
-  it("STAFF gets ALL tools", () => {
-    expect(getToolNamesForRole("STAFF")).toBe("ALL");
+  it("STAFF gets all 11 tool schemas", () => {
+    const schemas = registry.getSchemasForRole("STAFF");
+    expect(schemas).toHaveLength(11);
   });
 
-  it("ADMIN gets ALL tools", () => {
-    expect(getToolNamesForRole("ADMIN")).toBe("ALL");
+  it("ADMIN gets all 11 tool schemas", () => {
+    const schemas = registry.getSchemasForRole("ADMIN");
+    expect(schemas).toHaveLength(11);
   });
 });

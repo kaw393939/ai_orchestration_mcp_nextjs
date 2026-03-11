@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import type Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicApiKey } from "@/lib/config/env";
 import { looksLikeMath, buildSystemPrompt } from "@/lib/chat/policy";
 import {
@@ -8,7 +9,8 @@ import {
   successText,
 } from "@/lib/chat/http-facade";
 import { runClaudeAgentLoopStream } from "@/lib/chat/anthropic-stream";
-import { getToolsForRole } from "@/lib/chat/tools";
+import { getToolRegistry, getToolExecutor } from "@/lib/chat/tool-composition-root";
+import type { ToolExecutionContext } from "@/core/tool-registry/ToolExecutionContext";
 import { getSessionUser } from "@/lib/auth";
 import type { RoleName } from "@/core/entities/user";
 import type { MessagePart } from "@/core/entities/message-parts";
@@ -34,7 +36,14 @@ export async function POST(request: NextRequest) {
       const user = await getSessionUser();
       const role = user.roles[0] as RoleName;
       const systemPrompt = await buildSystemPrompt(role);
-      const tools = getToolsForRole(role);
+      const tools = getToolRegistry().getSchemasForRole(role) as Anthropic.Tool[];
+
+      const execContext: ToolExecutionContext = {
+        role,
+        userId: user.id,
+      };
+      const toolExecutor = (name: string, input: Record<string, unknown>) =>
+        getToolExecutor()(name, input, execContext);
 
       const body = (await request.json()) as {
         messages?: ChatMessage[];
@@ -148,7 +157,7 @@ export async function POST(request: NextRequest) {
               signal: streamAbortController.signal,
               systemPrompt,
               tools,
-              role,
+              toolExecutor,
               callbacks: {
                 onDelta(text) {
                   assistantText += text;

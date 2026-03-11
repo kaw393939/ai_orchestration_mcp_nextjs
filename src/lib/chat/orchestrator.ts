@@ -1,19 +1,17 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ChatProvider } from "@/lib/chat/anthropic-client";
-import { createToolResults } from "@/lib/chat/tools";
 import type { ToolChoice } from "@/lib/chat/types";
-import type { RoleName } from "@/core/entities/user";
 
 export async function orchestrateChatTurn({
   provider,
   conversation,
   toolChoice,
-  role,
+  toolExecutor,
 }: {
   provider: ChatProvider;
   conversation: Anthropic.MessageParam[];
   toolChoice: ToolChoice;
-  role?: RoleName;
+  toolExecutor: (name: string, input: Record<string, unknown>) => Promise<unknown>;
 }) {
   let nextToolChoice = toolChoice;
 
@@ -44,7 +42,26 @@ export async function orchestrateChatTurn({
     };
     conversation.push(assistantMessage);
 
-    const toolResults = await createToolResults(toolUses, role);
+    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = await Promise.all(
+      toolUses.map(async (use): Promise<Anthropic.Messages.ToolResultBlockParam> => {
+        try {
+          const result = await toolExecutor(use.name, use.input as Record<string, unknown>);
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content: typeof result === "string" ? result : JSON.stringify(result),
+          };
+        } catch (error) {
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content: error instanceof Error ? error.message : "Tool execution failed.",
+            is_error: true,
+          };
+        }
+      }),
+    );
+
     const toolResultMessage: Anthropic.MessageParam = {
       role: "user",
       content: toolResults,

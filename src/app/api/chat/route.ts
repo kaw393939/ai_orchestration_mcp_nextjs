@@ -15,7 +15,8 @@ import {
 } from "@/lib/chat/provider-decorators";
 import { runRouteTemplate, successJson } from "@/lib/chat/http-facade";
 import { logEvent } from "@/lib/observability/logger";
-import { getToolsForRole } from "@/lib/chat/tools";
+import { getToolRegistry, getToolExecutor } from "@/lib/chat/tool-composition-root";
+import type { ToolExecutionContext } from "@/core/tool-registry/ToolExecutionContext";
 import { getSessionUser } from "@/lib/auth";
 import type { RoleName } from "@/core/entities/user";
 
@@ -33,7 +34,14 @@ export async function POST(request: NextRequest) {
       const user = await getSessionUser();
       const role = user.roles[0] as RoleName;
       const systemPrompt = await buildSystemPrompt(role);
-      const tools = getToolsForRole(role);
+      const tools = getToolRegistry().getSchemasForRole(role) as Anthropic.Tool[];
+
+      const toolContext: ToolExecutionContext = {
+        role,
+        userId: user.id,
+      };
+      const toolExecutor = (name: string, input: Record<string, unknown>) =>
+        getToolExecutor()(name, input, toolContext);
 
       const client = new Anthropic({ apiKey });
       const provider = withProviderTiming(
@@ -62,7 +70,7 @@ export async function POST(request: NextRequest) {
         provider,
         conversation,
         toolChoice,
-        role,
+        toolExecutor,
       });
 
       return successJson(context, { reply });
