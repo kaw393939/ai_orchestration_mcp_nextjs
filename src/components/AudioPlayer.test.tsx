@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { AudioPlayer } from "./AudioPlayer";
 import React from "react";
@@ -28,27 +28,41 @@ describe("AudioPlayer", () => {
       createObjectURL: vi.fn().mockReturnValue("blob:test"),
       revokeObjectURL: vi.fn(),
     });
+
+    // Mock IntersectionObserver
+    class MockIntersectionObserver {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+      constructor(
+        _cb: IntersectionObserverCallback,
+        _opts?: IntersectionObserverInit,
+      ) {}
+    }
+    vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
   });
 
-  it("fetches and plays audio when play button is clicked", async () => {
+  it("auto-fetches and plays audio on mount", async () => {
+    const mockReader = {
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: new Uint8Array([1, 2, 3]),
+        })
+        .mockResolvedValueOnce({ done: true, value: undefined }),
+    };
+
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        blob: async () => new Blob(["test"], { type: "audio/mpeg" }),
+        headers: new Headers({ "Content-Length": "3" }),
+        body: { getReader: () => mockReader },
       }),
     );
 
     render(<AudioPlayer title="Test Audio" text="Hello world" />);
-
-    // The play button is just a button in ToolCard's children
-    const buttons = screen.getAllByRole("button");
-    // Expand ToolCard first if needed, though children should be visible
-    // We know the play toggle is the one with w-12 h-12 classes
-    // Let's just click the play button
-    const playButton = buttons[buttons.length - 1]; // Actually, it disables based on isLoading
-
-    fireEvent.click(playButton);
 
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith("/api/tts", expect.any(Object));
@@ -61,17 +75,27 @@ describe("AudioPlayer", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
+        json: async () => ({ error: "Failed to stream audio" }),
       }),
     );
 
     render(<AudioPlayer title="Test Audio" text="Hello world" />);
 
-    const buttons = screen.getAllByRole("button");
-    const playButton = buttons[buttons.length - 1];
-    fireEvent.click(playButton);
-
     await waitFor(() => {
       expect(screen.getByText(/Failed to stream audio/i)).toBeInTheDocument();
     });
+  });
+
+  it("shows estimated duration in subtitle while loading", () => {
+    // Use a slow-resolving fetch to keep loading state active
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(new Promise(() => {})),
+    );
+
+    render(<AudioPlayer title="Test Audio" text="Hello world this is a test of the audio player" />);
+
+    expect(screen.getByText(/to generate/i)).toBeInTheDocument();
+    expect(screen.getByText(/s audio/i)).toBeInTheDocument();
   });
 });

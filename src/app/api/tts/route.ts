@@ -49,13 +49,21 @@ export async function POST(req: Request) {
     }
 
     // Stream the audio body directly to the client — no buffering
+    const headers: HeadersInit = {
+      "Content-Type": "audio/mpeg",
+      "Transfer-Encoding": "chunked",
+      "Cache-Control": "no-cache",
+    };
+
+    // Pass Content-Length through for client-side progress tracking
+    const contentLength = oaResponse.headers.get("Content-Length");
+    if (contentLength) {
+      headers["Content-Length"] = contentLength;
+    }
+
     return new NextResponse(oaResponse.body, {
       status: 200,
-      headers: {
-        "Content-Type": "audio/mpeg",
-        "Transfer-Encoding": "chunked",
-        "Cache-Control": "no-cache",
-      },
+      headers,
     });
   } catch (error) {
     console.error("TTS Route Error:", error);
