@@ -32,7 +32,7 @@ Each sprint is independently deployable (the app works after each sprint, just w
 
 | Sprint | Tasks | New Files | Modified Files | New Tests |
 |--------|-------|-----------|----------------|-----------|
-| **0 — Violations** | 4 | 1 | 5 | 0 (existing pass) |
+| **0 — Violations** | 4 | 1 | 10 | 0 (existing pass) |
 | **1 — Auth Core** | 8 | 9 | 3 | ~15 unit + integration |
 | **2 — Auth API & UI** | 4 | 7 | 5 | ~8 integration + middleware |
 | **3 — Role-Aware LLM** | 5 | 2 | 6 | ~10 unit + integration |
