@@ -45,9 +45,16 @@ export const RichContentRenderer: React.FC<Props> = ({
 }) => {
   return (
     <div className="flex flex-col gap-3">
-      {content.blocks.map((block, i) => (
-        <BlockRenderer key={i} block={block} onLinkClick={onLinkClick} />
-      ))}
+      {content.blocks.map((block, i) => {
+        // Use stable keys for stateful blocks so React doesn't remount them
+        // when preceding blocks shift indices during streaming.
+        let key: string | number = i;
+        if (block.type === "audio")
+          key = `audio-${block.title}-${block.text.substring(0, 50)}`;
+        else if (block.type === "code-block" && block.language === "mermaid")
+          key = `mermaid-${block.code.substring(0, 50)}`;
+        return <BlockRenderer key={key} block={block} onLinkClick={onLinkClick} />;
+      })}
     </div>
   );
 };

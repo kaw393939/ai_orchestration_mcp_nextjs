@@ -55,7 +55,7 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl flex flex-col gap-4 sm:gap-6 pb-4">
+    <div className="mx-auto w-full max-w-3xl flex flex-col gap-4 sm:gap-6 pb-8">
       {/* Show the grand brand header at the start of the conversation */}
       {messages.length <= 2 && !searchQuery && <BrandHeader />}
 
