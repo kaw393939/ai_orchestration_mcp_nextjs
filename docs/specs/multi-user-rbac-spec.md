@@ -345,7 +345,10 @@ Body: { email, password, name }
 
 Server:
   1. Route handler delegates to RegisterUserInteractor
-  2. Interactor validates email format, password length (≥8 chars)
+  2. Interactor validates:
+     - email: valid format (contains @ and domain)
+     - password: ≥8 chars, ≤72 chars (bcrypt input limit)
+     - name: 1–100 chars, trimmed, no leading/trailing whitespace
   3. Interactor checks email uniqueness via UserRepository.findByEmail()
   4. Interactor hashes password via PasswordHasher.hash() (bcryptjs, cost 12)
   5. Interactor creates user via UserRepository.create() with role AUTHENTICATED
@@ -437,24 +440,34 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id
 
 **Migration strategy:** Since we use `CREATE TABLE IF NOT EXISTS` + `INSERT OR IGNORE`, add the new statements to `ensureSchema()`. For the `ALTER TABLE` on existing `users`, wrap in a try/catch (SQLite throws if column already exists). This is acceptable for a single-file SQLite dev database.
 
+**Existing hardcoded users:** The 4 mock users (ANONYMOUS, AUTHENTICATED, STAFF, ADMIN) will have NULL `password_hash` after migration. They **cannot log in** via the normal login flow. They serve two purposes going forward:
+1. The ANONYMOUS user record provides the identity for unauthenticated visitors.
+2. Admin can `INSERT` a password_hash manually or use a one-time bootstrap script to set passwords for the other 3 seed users.
+3. New users created via `/api/auth/register` always get a password_hash.
+
+Do NOT auto-assign passwords to seed users — that's a security anti-pattern.
+
 ### 3.3 Middleware (Tier 1 — API Protection)
 
 Create `src/middleware.ts`:
 
 ```
-Route matching:
+Route matching (Edge Runtime — cookie presence check ONLY, no DB):
   /api/health/*          → PASS (public)
   /api/auth/register     → PASS (public)
   /api/auth/login        → PASS (public)
-  /api/auth/me           → require valid session
-  /api/auth/switch       → require valid session + ADMIN role
-  /api/auth/logout       → require valid session
-  /api/chat/*            → require valid session (AUTHENTICATED+)
-  /api/tts               → require valid session (AUTHENTICATED+)
+  /api/chat/*            → PASS (public — ANONYMOUS access allowed, role gating in route handler)
+  /api/tts               → PASS (public — ANONYMOUS access allowed, content gating in route handler)
+  /api/auth/me           → require cookie present
+  /api/auth/switch       → require cookie present (ADMIN check in route handler)
+  /api/auth/logout       → require cookie present
+  /api/conversations/*   → require cookie present
   All other routes        → PASS (pages handle their own rendering)
 ```
 
-Implementation: Read `lms_session_token` cookie in middleware. For protected routes, verify the session exists and hasn't expired. For role-gated routes, also check the user's role.
+**Middleware does cookie presence checks only** (see §2A Issue F). It cannot access the database — `better-sqlite3` is incompatible with Edge Runtime. Full session validation happens in route handlers via `ValidateSessionInteractor`.
+
+**ANONYMOUS access design:** Chat routes (`/api/chat/*`, `/api/tts`) are public at the middleware level. When no session cookie is present, the route handler treats the caller as role `ANONYMOUS` (limited tools, limited content — see §3.4). When a session cookie IS present, the route handler validates it and uses the user's real role. This allows unauthenticated visitors to demo the product with limited capabilities.
 
 **Middleware does NOT touch page routes.** Pages always render — they show different content via the server-resolved `user` prop. Unauthenticated users see the public-facing chat (limited) or a login prompt.
 
@@ -707,20 +720,28 @@ These MUST be completed first to establish clean architecture before adding new 
                     └──────────────────┬───────────────┘
                                        │
          ┌─────────────┬───────────────┼───────────────┬──────────────┐
-         │ PUBLIC       │ PUBLIC        │ AUTHENTICATED │ ADMIN        │
-         │              │               │               │              │
-    /api/health/*  /api/auth/login  /api/chat/*     /api/auth/switch
-                   /api/auth/register /api/tts
+         │ PUBLIC       │ PUBLIC        │ COOKIE REQUIRED │ COOKIE REQ  │
+         │              │               │                 │  (ADMIN in  │
+         │              │               │                 │   handler)  │
+    /api/health/*  /api/auth/login  /api/auth/me      /api/auth/switch
+                   /api/auth/register /api/auth/logout
                                     /api/conversations/*
-                                    /api/auth/me
-                                    /api/auth/logout
+
+         ┌────────────────────────────────────────────────────────┐
+         │ PUBLIC (role resolved in route handler)                 │
+         │ No cookie → ANONYMOUS role. Cookie → validated role.   │
+         │                                                         │
+         │   /api/chat/*       /api/tts                           │
+         └────────────────────────────────────────────────────────┘
 ```
 
 ```
 Two-layer auth check (Chain of Responsibility):
 
-1. Middleware (Edge) → cookie missing? → 401 IMMEDIATELY (fast reject)
+1. Middleware (Edge) → protected route + cookie missing? → 401 (fast reject)
+   Chat routes → always pass (ANONYMOUS allowed)
 2. Route handler (Node) → ValidateSessionInteractor
+     → no cookie? → treat as ANONYMOUS role
      → token not in DB? → 401
      → session expired? → 401
      → role insufficient? → 403
@@ -750,7 +771,9 @@ Two-layer auth check (Chain of Responsibility):
 - `bcryptjs` with cost factor 12
 - Password never stored in plaintext, never logged, never returned in API responses
 - `User` type exposed to client never includes `passwordHash`
-- Registration enforces minimum 8 characters
+- Registration enforces minimum 8 characters, maximum 72 characters (bcrypt input limit)
+- Passwords exceeding 72 bytes are rejected at validation, NOT silently truncated
+- Name field: 1–100 characters, trimmed
 
 ### Session lifecycle
 
@@ -881,6 +904,17 @@ User sends message
 ```
 
 The `parts` column stores the full `MessagePart[]` as JSON. This preserves tool calls and results for conversation replay.
+
+### Agent Loop Persistence
+
+A single user message may trigger multiple Anthropic agent-loop turns (e.g., tool_call → tool_result → tool_call → tool_result → final text). All turns are persisted as a **single assistant message** with the complete `parts` array. This matches the client-side `PresentedMessage` model — one assistant message contains all tool interactions plus the final text response.
+
+```
+User message  → 1 row in messages (role: 'user')
+Agent loop    → 1 row in messages (role: 'assistant', parts: [...all tool_calls + tool_results + text])
+```
+
+Rationale: Storing each tool_call as a separate row would complicate replay and break the 1:1 relationship between displayed messages and DB rows.
 
 ### Conversation Limits
 
@@ -1066,11 +1100,14 @@ GET /api/conversations/[id]
   Cookie: lms_session_token (required)
   → 200: { conversation: { id, title, createdAt }, messages: Message[] }
   → 404: { error: "Conversation not found" }
+  Note: Returns 404 for both "does not exist" and "belongs to another user"
+        (do not leak existence of other users' conversations)
 
 DELETE /api/conversations/[id]
   Cookie: lms_session_token (required)
   → 200: { success: true }
   → 404: { error: "Conversation not found" }
+  Note: Same 404 policy — ownership violations return 404, not 403
 ```
 
 ### Chat (updated)
@@ -1085,4 +1122,649 @@ POST /api/chat/stream
       data: {"tool_call": {...}}
       data: {"tool_result": {...}}
       data: {"done": true}
+```
+
+---
+
+## 13. Requirements Matrix
+
+### 13.1 Positive Requirements (the system MUST)
+
+#### Registration
+
+| ID | Requirement |
+|----|-------------|
+| REG-1 | The system MUST allow a visitor to create an account with email, password, and name. |
+| REG-2 | The system MUST hash the password with bcryptjs (cost 12) before storing it. |
+| REG-3 | The system MUST reject registration if the email is already registered (400 response). |
+| REG-4 | The system MUST enforce password length: ≥8 and ≤72 characters. |
+| REG-5 | The system MUST enforce name length: 1–100 characters, trimmed. |
+| REG-6 | The system MUST validate email format (contains @ with a domain). |
+| REG-7 | The system MUST assign the AUTHENTICATED role to newly registered users. |
+| REG-8 | The system MUST create a session and set an httpOnly cookie upon successful registration. |
+| REG-9 | The system MUST return the user object (id, email, name, roles) on successful registration — never the password hash. |
+
+#### Authentication
+
+| ID | Requirement |
+|----|-------------|
+| AUTH-1 | The system MUST allow a registered user to log in with email and password. |
+| AUTH-2 | The system MUST create a new session token (crypto.randomUUID) on each successful login. |
+| AUTH-3 | The system MUST return 401 for invalid credentials without revealing whether the email or password was wrong. |
+| AUTH-4 | The system MUST destroy the session (DB row + cookie) on logout. |
+| AUTH-5 | The system MUST return the current user via `GET /api/auth/me` when a valid session exists. |
+| AUTH-6 | The system MUST expire sessions after 7 days (configurable via `SESSION_MAX_AGE_DAYS`). |
+| AUTH-7 | The system MUST clean up expired sessions opportunistically or at startup. |
+
+#### Session & Cookie
+
+| ID | Requirement |
+|----|-------------|
+| SESS-1 | The session cookie MUST be httpOnly, sameSite: lax, path: /, secure in production. |
+| SESS-2 | The session token MUST be a cryptographically random UUID. |
+| SESS-3 | The session lookup MUST go through `ValidateSessionInteractor` → `SessionRepository` (never raw DB in route handlers). |
+
+#### Middleware & Route Protection
+
+| ID | Requirement |
+|----|-------------|
+| MW-1 | Middleware MUST run in Edge Runtime — cookie presence check only, no DB access. |
+| MW-2 | Middleware MUST return 401 for protected routes (`/api/conversations/*`, `/api/auth/me`, `/api/auth/logout`) when the cookie is missing. |
+| MW-3 | Middleware MUST pass chat routes (`/api/chat/*`, `/api/tts`) without cookie — ANONYMOUS access is allowed. |
+| MW-4 | Route handlers MUST validate sessions via `ValidateSessionInteractor` for all routes that received a session cookie. |
+| MW-5 | Route handlers MUST treat requests with no session cookie on chat routes as ANONYMOUS role. |
+| MW-6 | Route handlers MUST return 403 (not 401) when a valid session exists but the role is insufficient. |
+
+#### RBAC & Role-Aware LLM
+
+| ID | Requirement |
+|----|-------------|
+| RBAC-1 | The system MUST provide 4 roles: ANONYMOUS, AUTHENTICATED, STAFF, ADMIN. |
+| RBAC-2 | The system MUST pass the caller's role to `ChatPolicyInteractor` for system prompt generation. |
+| RBAC-3 | The system MUST filter available tools by role via `ToolAccessPolicy.getToolNamesForRole()`. |
+| RBAC-4 | ANONYMOUS MUST receive only 6 tools: calculator, search_books, get_book_summary, set_theme, navigate, adjust_ui. |
+| RBAC-5 | AUTHENTICATED, STAFF, and ADMIN MUST receive all 11 tools. |
+| RBAC-6 | The LLM system prompt MUST include role-specific behavioral directives (e.g., ANONYMOUS gets "DEMO mode" framing). |
+| RBAC-7 | Tool-level content gating MUST enforce restrictions independently of the prompt (belt and suspenders). |
+
+#### Role Switcher (ADMIN Simulation)
+
+| ID | Requirement |
+|----|-------------|
+| SWITCH-1 | The role switcher MUST only be accessible to users with the ADMIN role. |
+| SWITCH-2 | The simulated role MUST be stored in a separate `lms_simulated_role` cookie, not the session. |
+| SWITCH-3 | The system MUST verify ADMIN role via `ValidateSessionInteractor` before accepting a switch request. |
+
+#### Chat History
+
+| ID | Requirement |
+|----|-------------|
+| CHAT-1 | The system MUST persist every user message and assistant response to SQLite. |
+| CHAT-2 | The system MUST auto-create a conversation on the first message (when no conversationId is provided). |
+| CHAT-3 | The system MUST auto-title conversations from the first user message (truncated to 80 chars). |
+| CHAT-4 | The system MUST return `conversationId` in the first SSE event so the client can track it. |
+| CHAT-5 | The system MUST enforce conversation ownership — a user can only access their own conversations. |
+| CHAT-6 | The system MUST store assistant messages with full `parts` JSON (tool_calls + tool_results + text). |
+| CHAT-7 | The system MUST support listing a user's conversations (most recent first). |
+| CHAT-8 | The system MUST support deleting a conversation (CASCADE deletes all messages). |
+| CHAT-9 | The system MUST persist agent-loop exchanges as a single assistant message row (not one row per tool call). |
+| CHAT-10 | The system MUST support loading a previous conversation with all its messages for replay. |
+
+#### UI
+
+| ID | Requirement |
+|----|-------------|
+| UI-1 | Unauthenticated visitors MUST see "Sign In" / "Register" links in the navigation. |
+| UI-2 | Authenticated users MUST see their name, conversation history, and accessibility controls. |
+| UI-3 | ADMIN users MUST additionally see the role simulation panel. |
+| UI-4 | The login page MUST show inline error messages on failure (not alerts). |
+| UI-5 | The register page MUST show inline validation errors for each field. |
+| UI-6 | The client MUST provide a "New Chat" button to start a fresh conversation. |
+| UI-7 | The client MUST provide a conversation sidebar or selector to switch between conversations. |
+
+### 13.2 Negative Requirements (the system MUST NOT)
+
+#### Security Prohibitions
+
+| ID | Requirement |
+|----|-------------|
+| NEG-SEC-1 | The system MUST NOT store passwords in plaintext — ever. |
+| NEG-SEC-2 | The system MUST NOT return `passwordHash` in any API response or client-facing prop. |
+| NEG-SEC-3 | The system MUST NOT log passwords, password hashes, or session tokens. |
+| NEG-SEC-4 | The system MUST NOT silently truncate passwords exceeding 72 bytes — MUST reject with a validation error. |
+| NEG-SEC-5 | The system MUST NOT reveal whether an email is registered during failed login — use generic "Invalid credentials" message. |
+| NEG-SEC-6 | The system MUST NOT expose whether a conversation exists when it belongs to another user — return 404, not 403. |
+| NEG-SEC-7 | The system MUST NOT use JWTs — session tokens are opaque UUIDs validated against the DB. |
+| NEG-SEC-8 | The system MUST NOT auto-assign passwords to existing seed users — that is a security anti-pattern. |
+
+#### Architecture Prohibitions
+
+| ID | Requirement |
+|----|-------------|
+| NEG-ARCH-1 | Core layer MUST NOT import from `src/lib/` or `src/adapters/` — dependencies point inward only. |
+| NEG-ARCH-2 | Data mappers MUST NOT contain authorization logic — ownership checks belong in use-case interactors. |
+| NEG-ARCH-3 | Middleware MUST NOT access the database — `better-sqlite3` is incompatible with Edge Runtime. |
+| NEG-ARCH-4 | Middleware MUST NOT block page routes — pages always render, showing role-appropriate content. |
+| NEG-ARCH-5 | The `User` entity MUST NOT carry `passwordHash` — that field belongs to `UserRecord` in the adapter layer. |
+| NEG-ARCH-6 | Tool access policy and system prompt logic MUST NOT live in infrastructure (`lib/`) — they are domain rules belonging in core use-cases. |
+
+#### Role Prohibitions
+
+| ID | Requirement |
+|----|-------------|
+| NEG-ROLE-1 | Non-ADMIN users MUST NOT access the role-switcher endpoint — return 403. |
+| NEG-ROLE-2 | ANONYMOUS users MUST NOT access full chapter content, audio generation, or checklists. |
+| NEG-ROLE-3 | ANONYMOUS users MUST NOT access conversation history endpoints (`/api/conversations/*`). |
+| NEG-ROLE-4 | The system MUST NOT trust client-side role claims — all role determination happens server-side from the session. |
+
+#### Data Prohibitions
+
+| ID | Requirement |
+|----|-------------|
+| NEG-DATA-1 | The system MUST NOT allow a user to read, modify, or delete another user's conversations. |
+| NEG-DATA-2 | The system MUST NOT persist chat messages for ANONYMOUS visitors (no session = no conversation tracking). |
+| NEG-DATA-3 | The system MUST NOT allow conversations to exceed 100 messages (soft limit, enforced at creation). |
+| NEG-DATA-4 | The system MUST NOT allow a user to have more than 50 conversations (soft limit, oldest deleted when exceeded). |
+
+---
+
+## 14. User Behavior Test Specifications
+
+These are acceptance-test-style scenarios covering complete user journeys. Each scenario specifies the actor, preconditions, actions, and expected outcomes (positive and negative paths).
+
+### 14.1 Registration Journeys
+
+#### TEST-REG-01: Successful Registration
+
+```
+GIVEN   a visitor with no account
+WHEN    they POST /api/auth/register with:
+          { email: "alice@example.com", password: "securepass1", name: "Alice" }
+THEN    response status = 201
+AND     response body contains { user: { id, email: "alice@example.com", name: "Alice", roles: ["AUTHENTICATED"] } }
+AND     response body does NOT contain passwordHash
+AND     a Set-Cookie header sets lms_session_token (httpOnly, sameSite=lax)
+AND     a row exists in the users table with password_hash NOT NULL
+AND     a row exists in the sessions table linked to the new user
+AND     a row exists in user_roles linking the user to the AUTHENTICATED role
+```
+
+#### TEST-REG-02: Duplicate Email Rejection
+
+```
+GIVEN   a user "alice@example.com" already exists
+WHEN    a visitor POSTs /api/auth/register with { email: "alice@example.com", ... }
+THEN    response status = 400
+AND     response body = { error: "Email already registered" }
+AND     no new user row is created
+AND     no new session is created
+```
+
+#### TEST-REG-03: Password Too Short
+
+```
+GIVEN   a visitor with no account
+WHEN    they POST /api/auth/register with { password: "short" } (5 chars)
+THEN    response status = 400
+AND     response body contains a validation error mentioning minimum 8 characters
+AND     no user is created
+```
+
+#### TEST-REG-04: Password Too Long (bcrypt limit)
+
+```
+GIVEN   a visitor with no account
+WHEN    they POST /api/auth/register with { password: <73 characters> }
+THEN    response status = 400
+AND     response body contains a validation error mentioning maximum 72 characters
+AND     no user is created (password NOT silently truncated)
+```
+
+#### TEST-REG-05: Invalid Email Format
+
+```
+GIVEN   a visitor with no account
+WHEN    they POST /api/auth/register with { email: "not-an-email" }
+THEN    response status = 400
+AND     response body contains a validation error about email format
+```
+
+#### TEST-REG-06: Empty Name
+
+```
+GIVEN   a visitor with no account
+WHEN    they POST /api/auth/register with { name: "" }
+THEN    response status = 400
+AND     response body contains a validation error about name being required
+```
+
+#### TEST-REG-07: Name Too Long
+
+```
+GIVEN   a visitor with no account
+WHEN    they POST /api/auth/register with { name: <101 characters> }
+THEN    response status = 400
+AND     response body contains a validation error about name length
+```
+
+#### TEST-REG-08: Missing Required Fields
+
+```
+GIVEN   a visitor with no account
+WHEN    they POST /api/auth/register with { email: "a@b.com" } (missing password and name)
+THEN    response status = 400
+AND     response body lists all missing fields
+```
+
+### 14.2 Login Journeys
+
+#### TEST-LOGIN-01: Successful Login
+
+```
+GIVEN   a registered user "alice@example.com" with password "securepass1"
+WHEN    they POST /api/auth/login with { email: "alice@example.com", password: "securepass1" }
+THEN    response status = 200
+AND     response body contains { user: { id, email, name, roles } }
+AND     a Set-Cookie header sets lms_session_token
+AND     a new row exists in the sessions table
+```
+
+#### TEST-LOGIN-02: Wrong Password
+
+```
+GIVEN   a registered user "alice@example.com"
+WHEN    they POST /api/auth/login with { email: "alice@example.com", password: "wrongpass" }
+THEN    response status = 401
+AND     response body = { error: "Invalid credentials" }
+AND     NO hint about whether the email was correct
+AND     no session is created
+```
+
+#### TEST-LOGIN-03: Nonexistent Email
+
+```
+GIVEN   no user with email "nobody@example.com"
+WHEN    they POST /api/auth/login with { email: "nobody@example.com", password: "anything" }
+THEN    response status = 401
+AND     response body = { error: "Invalid credentials" }
+AND     the response is indistinguishable from TEST-LOGIN-02 (timing-safe)
+```
+
+#### TEST-LOGIN-04: Seed User Without Password (cannot login)
+
+```
+GIVEN   the hardcoded ADMIN seed user with NULL password_hash
+WHEN    they POST /api/auth/login with { email: "admin@lms.local", password: "anything" }
+THEN    response status = 401
+AND     response body = { error: "Invalid credentials" }
+(Seed users cannot log in until a password is set via bootstrap script)
+```
+
+#### TEST-LOGIN-05: Multiple Active Sessions
+
+```
+GIVEN   user "alice" is logged in on Browser A (session token A)
+WHEN    user "alice" logs in on Browser B
+THEN    a new session token B is created
+AND     session token A remains valid (concurrent sessions allowed)
+```
+
+### 14.3 Session Lifecycle Journeys
+
+#### TEST-SESS-01: Valid Session — Access Protected Route
+
+```
+GIVEN   user "alice" has a valid session (cookie: lms_session_token=<valid>)
+WHEN    they GET /api/auth/me
+THEN    response status = 200
+AND     response body = { user: { id, email: "alice@...", name: "Alice", roles: ["AUTHENTICATED"] } }
+```
+
+#### TEST-SESS-02: Expired Session — Rejected
+
+```
+GIVEN   user "alice" has an expired session (expires_at < now)
+WHEN    they GET /api/auth/me
+THEN    response status = 401
+AND     the Set-Cookie header clears the lms_session_token cookie
+```
+
+#### TEST-SESS-03: Invalid Token — Rejected
+
+```
+GIVEN   a request with cookie lms_session_token=<random-garbage>
+WHEN    they GET /api/auth/me
+THEN    response status = 401
+AND     no user data is returned
+```
+
+#### TEST-SESS-04: Logout Destroys Session
+
+```
+GIVEN   user "alice" has a valid session
+WHEN    they POST /api/auth/logout
+THEN    response status = 200
+AND     the session row is deleted from the sessions table
+AND     the Set-Cookie header clears the lms_session_token cookie
+WHEN    they then GET /api/auth/me (with the old cookie)
+THEN    response status = 401
+```
+
+#### TEST-SESS-05: No Cookie — Middleware Blocks Protected Routes
+
+```
+GIVEN   a request with no lms_session_token cookie
+WHEN    they GET /api/conversations
+THEN    response status = 401 (from middleware, no DB hit)
+```
+
+#### TEST-SESS-06: No Cookie — Middleware Allows Chat Routes
+
+```
+GIVEN   a request with no lms_session_token cookie
+WHEN    they POST /api/chat/stream with { messages: [...] }
+THEN    the request reaches the route handler
+AND     the route handler treats the caller as ANONYMOUS role
+AND     the system prompt includes "DEMO mode" framing
+AND     only 6 tools are available (calculator, search_books, get_book_summary, set_theme, navigate, adjust_ui)
+```
+
+### 14.4 RBAC & Role-Based Behavior
+
+#### TEST-RBAC-01: ANONYMOUS Gets Limited Tools
+
+```
+GIVEN   an unauthenticated visitor (no session cookie)
+WHEN    they POST /api/chat/stream with a message asking for a full chapter
+THEN    the LLM receives only 6 tools (not get_chapter, get_checklist, etc.)
+AND     the system prompt includes the ANONYMOUS directive encouraging sign-up
+AND     the LLM response does NOT include full chapter text
+AND     the LLM suggests creating an account for full access
+```
+
+#### TEST-RBAC-02: AUTHENTICATED Gets Full Tools
+
+```
+GIVEN   user "alice" with role AUTHENTICATED and a valid session
+WHEN    they POST /api/chat/stream with a message asking for a full chapter
+THEN    the LLM receives all 11 tools
+AND     the system prompt includes the AUTHENTICATED directive
+AND     the LLM CAN return full chapter content
+```
+
+#### TEST-RBAC-03: ADMIN Can Switch Roles
+
+```
+GIVEN   user "admin" with role ADMIN and a valid session
+WHEN    they POST /api/auth/switch with { role: "ANONYMOUS" }
+THEN    response status = 200
+AND     a lms_simulated_role cookie is set to "ANONYMOUS"
+AND     subsequent LLM requests use the ANONYMOUS system prompt + tool set
+```
+
+#### TEST-RBAC-04: Non-ADMIN Cannot Switch Roles
+
+```
+GIVEN   user "alice" with role AUTHENTICATED and a valid session
+WHEN    they POST /api/auth/switch with { role: "ADMIN" }
+THEN    response status = 403
+AND     response body = { error: "Admin access required" }
+AND     no lms_simulated_role cookie is set
+```
+
+#### TEST-RBAC-05: ANONYMOUS Cannot Access Conversations
+
+```
+GIVEN   an unauthenticated visitor (no session cookie)
+WHEN    they GET /api/conversations
+THEN    response status = 401 (middleware rejects — no cookie on protected route)
+```
+
+#### TEST-RBAC-06: Tool Content Gating (Belt and Suspenders)
+
+```
+GIVEN   an unauthenticated visitor (ANONYMOUS role)
+WHEN    the LLM somehow attempts to call get_chapter (tool not in filtered list)
+THEN    the tool call is rejected (tool not available in the filtered set)
+Note:   This is enforced by ToolAccessPolicy, not just the prompt directive
+```
+
+### 14.5 Chat History Journeys
+
+#### TEST-CHAT-01: First Message Creates Conversation
+
+```
+GIVEN   user "alice" is authenticated
+WHEN    they POST /api/chat/stream with { messages: [{ role: "user", content: "Tell me about Bauhaus" }] }
+        (no conversationId)
+THEN    a new conversation is created in the DB with user_id = alice.id
+AND     the conversation title = "Tell me about Bauhaus" (auto-generated)
+AND     the first SSE event contains { conversationId: "<new-id>" }
+AND     the user message is persisted in the messages table
+AND     the assistant response (with parts) is persisted after stream completes
+```
+
+#### TEST-CHAT-02: Subsequent Message Appends to Conversation
+
+```
+GIVEN   user "alice" is authenticated and has conversation "conv_123"
+WHEN    they POST /api/chat/stream with { messages: [...], conversationId: "conv_123" }
+THEN    the message is appended to the existing conversation
+AND     no new conversation is created
+AND     the conversation's updated_at timestamp is refreshed
+```
+
+#### TEST-CHAT-03: Conversation Ownership Enforced
+
+```
+GIVEN   user "alice" owns conversation "conv_alice_1"
+AND     user "bob" is authenticated
+WHEN    bob GETs /api/conversations/conv_alice_1
+THEN    response status = 404 (NOT 403 — do not leak existence)
+WHEN    bob POSTs /api/chat/stream with { conversationId: "conv_alice_1" }
+THEN    response status = 404
+```
+
+#### TEST-CHAT-04: Load Previous Conversation
+
+```
+GIVEN   user "alice" has conversation "conv_123" with 5 messages
+WHEN    they GET /api/conversations/conv_123
+THEN    response contains all 5 messages in chronological order
+AND     each message includes id, role, content, parts, created_at
+AND     tool_call/tool_result parts are preserved in the parts JSON
+```
+
+#### TEST-CHAT-05: Delete Conversation Cascades
+
+```
+GIVEN   user "alice" has conversation "conv_123" with 10 messages
+WHEN    they DELETE /api/conversations/conv_123
+THEN    response status = 200
+AND     the conversation row is deleted
+AND     all 10 message rows are deleted (ON DELETE CASCADE)
+WHEN    they GET /api/conversations/conv_123
+THEN    response status = 404
+```
+
+#### TEST-CHAT-06: List Conversations (Most Recent First)
+
+```
+GIVEN   user "alice" has 3 conversations created at T1, T2, T3
+WHEN    they GET /api/conversations
+THEN    response contains 3 conversations ordered by updated_at DESC (T3 first)
+AND     each entry contains { id, title, updatedAt, messageCount }
+```
+
+#### TEST-CHAT-07: New Chat Resets State
+
+```
+GIVEN   user "alice" is in conversation "conv_123" in the UI
+WHEN    they click "New Chat"
+THEN    the client clears conversationId from state
+AND     the chat area resets to the hero/welcome message
+AND     the next POST /api/chat/stream omits conversationId (creating a new conversation)
+```
+
+#### TEST-CHAT-08: ANONYMOUS Chat Is Not Persisted
+
+```
+GIVEN   an unauthenticated visitor (no session cookie)
+WHEN    they POST /api/chat/stream with a message
+THEN    the LLM responds normally (with ANONYMOUS tool set)
+AND     NO conversation is created in the DB
+AND     NO messages are persisted
+AND     the SSE stream does NOT include a conversationId event
+```
+
+#### TEST-CHAT-09: Conversation Message Limit
+
+```
+GIVEN   user "alice" has a conversation with 100 messages
+WHEN    they POST /api/chat/stream with a new message to that conversation
+THEN    response status = 400
+AND     response body = { error: "Conversation message limit reached (100). Start a new chat." }
+```
+
+#### TEST-CHAT-10: Conversation Count Limit
+
+```
+GIVEN   user "alice" has 50 conversations
+WHEN    they POST /api/chat/stream with a new message (no conversationId, which would create #51)
+THEN    the oldest conversation is deleted to make room
+AND     the new conversation is created successfully
+```
+
+### 14.6 Page Rendering Journeys
+
+#### TEST-PAGE-01: Unauthenticated Visitor Sees Public Layout
+
+```
+GIVEN   a visitor with no session cookie
+WHEN    they navigate to /
+THEN    the page renders with "Sign In" / "Register" links in the nav
+AND     the chat is functional with ANONYMOUS limitations
+AND     no conversation sidebar is shown
+```
+
+#### TEST-PAGE-02: Authenticated User Sees Full Layout
+
+```
+GIVEN   user "alice" is authenticated
+WHEN    they navigate to /
+THEN    the nav shows alice's name and role
+AND     the conversation sidebar/selector is visible
+AND     the chat is fully functional with all tools
+```
+
+#### TEST-PAGE-03: Login Page Shows Errors Inline
+
+```
+GIVEN   a visitor navigates to /login
+WHEN    they submit the form with wrong credentials
+THEN    the page shows "Invalid credentials" as an inline error (not an alert/popup)
+AND     the form is not cleared — email field retains its value
+AND     the password field IS cleared (security)
+```
+
+#### TEST-PAGE-04: Register Page Validates Fields
+
+```
+GIVEN   a visitor navigates to /register
+WHEN    they submit with password "short" (5 chars)
+THEN    the page shows an inline error: "Password must be at least 8 characters"
+WHEN    they submit with email "not-an-email"
+THEN    the page shows an inline error about email format
+WHEN    they submit with an empty name
+THEN    the page shows an inline error: "Name is required"
+```
+
+#### TEST-PAGE-05: Successful Registration Redirects
+
+```
+GIVEN   a visitor fills out the register form with valid data
+WHEN    they submit the form
+THEN    the account is created (REG-1 through REG-9)
+AND     they are redirected to / (home page)
+AND     the nav now shows their name and AUTHENTICATED role
+```
+
+#### TEST-PAGE-06: Successful Login Redirects
+
+```
+GIVEN   a registered user navigates to /login
+WHEN    they submit valid credentials
+THEN    a session is created
+AND     they are redirected to / (home page)
+AND     their previous conversations are loadable
+```
+
+### 14.7 Edge Cases & Error Recovery
+
+#### TEST-EDGE-01: DB Unavailable During Session Validation
+
+```
+GIVEN   the SQLite database file is locked or corrupted
+WHEN    a request arrives with a valid session cookie
+THEN    the route handler returns 500 { error: "Internal server error" }
+AND     the error is logged (but no sensitive data in the log)
+```
+
+#### TEST-EDGE-02: Concurrent Registration Race Condition
+
+```
+GIVEN   two simultaneous POST /api/auth/register with the same email
+WHEN    both requests reach the interactor
+THEN    one succeeds (201) and the other fails (400: "Email already registered")
+AND     only one user row exists in the DB
+(Enforced by UNIQUE constraint on users.email)
+```
+
+#### TEST-EDGE-03: Cookie Present but Session Deleted (e.g., admin cleanup)
+
+```
+GIVEN   user "alice" has cookie lms_session_token=<token>
+AND     an admin manually deletes alice's session from the DB
+WHEN    alice makes a request to /api/auth/me
+THEN    response status = 401
+AND     the stale cookie is cleared
+```
+
+#### TEST-EDGE-04: Malformed Request Bodies
+
+```
+GIVEN   an authenticated user
+WHEN    they POST /api/chat/stream with { messages: "not-an-array" }
+THEN    response status = 400
+AND     response body contains a validation error
+WHEN    they POST /api/auth/register with { email: 12345 } (wrong type)
+THEN    response status = 400
+```
+
+#### TEST-EDGE-05: Conversation ID Tampering
+
+```
+GIVEN   user "alice" is authenticated
+WHEN    they POST /api/chat/stream with { conversationId: "conv_nonexistent" }
+THEN    response status = 404
+(The system does not create a conversation with a client-supplied ID)
+```
+
+#### TEST-EDGE-06: XSS in User Input Fields
+
+```
+GIVEN   a visitor registers with name: "<script>alert('xss')</script>"
+WHEN    the name is displayed in the UI
+THEN    it is rendered as escaped text, NOT executed as HTML
+(React's JSX escaping handles this by default, but verify in tests)
+```
+
+#### TEST-EDGE-07: SQL Injection in Login
+
+```
+GIVEN   a visitor attempts login with email: "' OR '1'='1"
+WHEN    the request reaches AuthenticateUserInteractor
+THEN    the parameterized query finds no user (email is treated as a literal string)
+AND     response status = 401
+(All DB queries use parameterized statements via better-sqlite3)
 ```
