@@ -14,6 +14,7 @@ import {
   GenerateAudioCommand 
 } from "@/core/use-cases/tools/UiTools";
 import { CalculatorCommand } from "@/core/use-cases/tools/CalculatorTool";
+import { getBookRepository } from "@/adapters/RepositoryFactory";
 
 // ---- Tool Definitions (Anthropic SDK Schema) ----
 
@@ -171,13 +172,14 @@ export const ALL_TOOLS: Anthropic.Tool[] = [
 ];
 
 // ---- Command Registry ----
+const bookRepo = getBookRepository();
 const commands = {
   calculator: new CalculatorCommand(),
-  search_books: new SearchBooksCommand(),
-  get_chapter: new GetChapterCommand(),
-  get_checklist: new GetChecklistCommand(),
-  list_practitioners: new ListPractitionersCommand(),
-  get_book_summary: new GetBookSummaryCommand(),
+  search_books: new SearchBooksCommand(bookRepo),
+  get_chapter: new GetChapterCommand(bookRepo),
+  get_checklist: new GetChecklistCommand(bookRepo),
+  list_practitioners: new ListPractitionersCommand(bookRepo),
+  get_book_summary: new GetBookSummaryCommand(bookRepo),
   set_theme: new SetThemeCommand(),
   adjust_ui: new AdjustUICommand(),
   navigate: new NavigateCommand(),
