@@ -1,6 +1,6 @@
 # Multi-User Auth, RBAC & Chat History — System Spec
 
-> **Status:** Draft (v2.1 — architecture-audited + requirements + behavioral tests)  
+> **Status:** Draft (v2.2 — architecture-audited + requirements + behavioral tests)  
 > **Date:** 2026-03-11  
 > **Scope:** Replace mock role-switcher with real auth, enforce RBAC server-side, persist chat history per user, make LLM role-aware.  
 > **Audit:** Clean Architecture (Robert C. Martin), SOLID, GoF design patterns.
@@ -370,6 +370,8 @@ Server:
   5. If no match: 401
 ```
 
+**Timing safety:** When email is not found (step 2), the interactor MUST still call `PasswordHasher.verify()` against a dummy hash before returning 401. This prevents timing-based email enumeration — an attacker cannot distinguish "email not found" (fast) from "wrong password" (slow bcrypt comparison). See TEST-LOGIN-03.
+
 #### Session Management
 
 Replace the bare role cookie with a **session token** cookie.
@@ -513,7 +515,7 @@ class ChatPolicyInteractor implements UseCase<{ role: RoleName }, string> {
 ```typescript
 // src/core/use-cases/ToolAccessPolicy.ts
 const TOOL_ACCESS: Record<RoleName, readonly string[] | "ALL"> = {
-  ANONYMOUS: ["search_books", "get_book_summary", "set_theme", "navigate", "adjust_ui", "calculator"],
+  ANONYMOUS: ["calculator", "search_books", "get_book_summary", "set_theme", "navigate", "adjust_ui"],
   AUTHENTICATED: "ALL",
   STAFF: "ALL",
   ADMIN: "ALL",
@@ -692,6 +694,7 @@ These are simple server-rendered pages with client-side form submission. On succ
 | `src/adapters/UserDataMapper.ts` | Implements `UserRepository` port. Adds `create()`, `findByEmail()`, `findById()`. Defines `UserRecord` (includes `passwordHash`) separate from public `User`. |
 | `src/app/api/chat/stream/route.ts` | Call `ValidateSessionInteractor`, pass role to `ChatPolicyInteractor` + `ToolAccessPolicy`, accept `conversationId`, persist messages via `MessageRepository` |
 | `src/app/api/chat/route.ts` | Same: add session validation + role-aware prompt |
+| `src/app/api/tts/route.ts` | Add session validation + role check: reject ANONYMOUS requests (no audio for unauthenticated visitors — belt-and-suspenders for §6 prompt directive) |
 | `src/app/api/auth/switch/route.ts` | Add ADMIN-only guard via `ValidateSessionInteractor`, write `lms_simulated_role` cookie |
 | `src/hooks/useGlobalChat.tsx` | Add `conversationId`, conversation list, load/create/delete actions |
 | `src/hooks/useMockAuth.ts` | Remove exported `ROLE_CONFIG` (move to `AccountMenu` local const). Simplify to admin-only role switch. |
@@ -975,6 +978,7 @@ Build from inside out (core first, infrastructure last):
 6. Update `/api/chat` — same session/role integration
 7. Restrict `SearchBooksCommand.execute()` — accept `role` context, truncate output for ANONYMOUS (belt-and-suspenders enforcement in use case, not just prompt)
 8. Gate role-switcher (`/api/auth/switch`) behind ADMIN-only via `ValidateSessionInteractor`
+9. Update `/api/tts` — add session validation, reject ANONYMOUS callers (belt-and-suspenders: LLM prompt says no audio for ANONYMOUS, endpoint enforces it server-side)
 
 ### Phase 3: Chat Persistence (ports → adapters → use cases → routes → client)
 
@@ -1061,6 +1065,19 @@ These are intentionally deferred:
 | Cookie present + protected route | Request passes through to handler |
 | Cookie absent + public route | Request passes through |
 
+### E2E / Page-Level Tests
+
+| Test | What it proves |
+|------|---------------|
+| Login page (TEST-PAGE-03) | Form shows inline errors, retains email, clears password on failure. |
+| Register page (TEST-PAGE-04) | Inline field-level validation for password length, email format, empty name. |
+| Registration redirect (TEST-PAGE-05) | Successful registration → redirect to `/`, nav shows user info. |
+| Login redirect (TEST-PAGE-06) | Successful login → redirect to `/`, previous conversations loadable. |
+| Unauthenticated layout (TEST-PAGE-01) | Sign In / Register links visible, chat functional with ANONYMOUS limits. |
+| Authenticated layout (TEST-PAGE-02) | User info, conversation sidebar, full chat tools. |
+
+See §14.6 for full GIVEN/WHEN/THEN specifications.
+
 ---
 
 ## 12. API Reference (target state)
@@ -1071,7 +1088,8 @@ These are intentionally deferred:
 POST /api/auth/register
   Body: { email: string, password: string, name: string }
   → 201: { user: { id, email, name, roles } }
-  → 400: { error: "Email already registered" | validation error }
+  → 400: { error: string }    — "Email already registered" for duplicates;
+                                validation message listing all invalid fields otherwise
 
 POST /api/auth/login
   Body: { email: string, password: string }
@@ -1274,7 +1292,7 @@ POST /api/chat/stream
 |----|-------------|
 | NEG-DATA-1 | The system MUST NOT allow a user to read, modify, or delete another user's conversations. |
 | NEG-DATA-2 | The system MUST NOT persist chat messages for ANONYMOUS visitors (no session = no conversation tracking). |
-| NEG-DATA-3 | The system MUST NOT allow conversations to exceed 100 messages (soft limit, enforced at creation). |
+| NEG-DATA-3 | The system MUST NOT allow conversations to exceed 100 messages (hard limit — returns 400 at creation; see TEST-CHAT-09). |
 | NEG-DATA-4 | The system MUST NOT allow a user to have more than 50 conversations (soft limit, oldest deleted when exceeded). |
 
 ---
