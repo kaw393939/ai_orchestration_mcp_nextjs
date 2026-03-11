@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import type { RoleName } from "@/core/entities/user";
 
 export const ROLE_CONFIG: Record<
@@ -30,19 +29,7 @@ export const ROLE_CONFIG: Record<
 };
 
 export function useMockAuth() {
-  const [localRole, setLocalRole] = useState<RoleName>("ANONYMOUS");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const match = document.cookie.match(
-      new RegExp(`(^| )lms_mock_session_role=([^;]+)`),
-    );
-    if (match) setLocalRole(match[2] as RoleName);
-  }, []);
-
   const switchRole = async (targetRole: RoleName) => {
-    setLocalRole(targetRole);
     try {
       await fetch("/api/auth/switch", {
         method: "POST",
@@ -56,8 +43,6 @@ export function useMockAuth() {
   };
 
   return {
-    localRole,
-    mounted,
     switchRole,
     ROLE_CONFIG,
   };

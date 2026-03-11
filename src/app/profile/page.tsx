@@ -1,10 +1,10 @@
 import Link from "next/link";
 
-export default function DashboardPage() {
+export default function ProfilePage() {
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="text-center space-y-4 max-w-md">
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
         <p className="text-sm opacity-50">
           This page is currently under development. Check back soon.
         </p>
