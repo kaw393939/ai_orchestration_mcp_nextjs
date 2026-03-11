@@ -58,5 +58,6 @@
 | **Modify** | `src/components/SiteNav.tsx` — login/register CTA for anonymous users |
 | **Modify** | `src/app/layout.tsx` — pass user to ChatProvider for context |
 | **Modify** | `src/hooks/useMockAuth.ts` — remove exported `ROLE_CONFIG` (move to AccountMenu local const); simplify to admin-only role switch |
-| **Spec** | §3.6, UI-1–3, TEST-PAGE-01–02 |
-| **Tests** | Build passes; manual verification of both auth states |
+| **Dev-mode guard** | In `AccountMenu.tsx`, show the role switcher panel when `user.roles.includes('ADMIN') \|\| process.env.NODE_ENV === 'development'`. Same guard applies in `POST /api/auth/switch` (Sprint 3 Task 3.5). This lets any authenticated dev test all roles without an ADMIN account. |
+| **Spec** | §3.6, UI-1–3, SWITCH-1, TEST-PAGE-01–02 |
+| **Tests** | Build passes; manual verification of both auth states; verify switcher visible for non-ADMIN in dev mode |

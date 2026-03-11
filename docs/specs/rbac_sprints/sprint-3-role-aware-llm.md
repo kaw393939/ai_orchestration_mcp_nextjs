@@ -61,10 +61,10 @@
 
 ## Task 3.5 — Admin role-switcher gating
 
-**What:** Gate `/api/auth/switch` behind ADMIN role.
+**What:** Gate `/api/auth/switch` behind ADMIN role (with dev-mode bypass).
 
 | Item | Detail |
 |------|--------|
-| **Modify** | `src/app/api/auth/switch/route.ts` — validate session → check ADMIN → write `lms_simulated_role` cookie |
+| **Modify** | `src/app/api/auth/switch/route.ts` — validate session → check ADMIN **or** `NODE_ENV === 'development'` → write `lms_simulated_role` cookie |
 | **Spec** | SWITCH-1–3, NEG-ROLE-1, TEST-RBAC-03–04 |
-| **Tests (new)** | ADMIN → 200 + cookie set; non-ADMIN → 403; no session → 401 |
+| **Tests (new)** | ADMIN → 200 + cookie set; non-ADMIN → 403 (prod); non-ADMIN + dev mode → 200; no session → 401 |

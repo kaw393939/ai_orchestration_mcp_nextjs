@@ -24,6 +24,8 @@ export function SiteNav({ user }: SiteNavProps) {
     gridEnabled, 
   } = useTheme();
 
+  const isAuth = user.roles.some((r) => r !== "ANONYMOUS");
+
   // Simple Breadcrumb logic
   const segments = pathname.split("/").filter(Boolean);
   const isBookPage = segments[0] === "books";

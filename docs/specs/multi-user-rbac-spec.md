@@ -385,14 +385,16 @@ Replace the bare role cookie with a **session token** cookie.
 
 The session token is a cryptographically random UUID (via `crypto.randomUUID()`). No JWTs needed — this is a server-rendered app with a single SQLite database on the same machine.
 
-#### Role Switcher (preserved for ADMIN)
+#### Role Switcher (preserved for ADMIN; unrestricted in dev mode)
 
 The existing role switcher in AccountMenu stays, but:
-- Only visible when the current user has the `ADMIN` role
-- `POST /api/auth/switch` requires ADMIN session
+- Only visible when the current user has the `ADMIN` role **or** `NODE_ENV === 'development'`
+- `POST /api/auth/switch` requires ADMIN session **or** `NODE_ENV === 'development'`
 - Writes a **separate** `lms_simulated_role` cookie (not the session)
-- `getSessionUser()` checks the simulated role cookie if present and user is ADMIN
-- Non-ADMIN users cannot simulate other roles
+- `getSessionUser()` checks the simulated role cookie if present and user is ADMIN (or dev mode)
+- Non-ADMIN users cannot simulate other roles **in production**
+
+> **Dev-mode exception:** When `NODE_ENV === 'development'`, the role switcher is accessible to all authenticated users regardless of role. This allows developers to test RBAC behavior without requiring an ADMIN account. The guard is a simple `process.env.NODE_ENV === 'development'` check added alongside the ADMIN role check.
 
 ### 3.2 Database Schema Changes
 
@@ -626,6 +628,7 @@ These are simple server-rendered pages with client-side form submission. On succ
 - Unauthenticated: Show "Sign In" / "Register" links instead of user info
 - Authenticated: Show user info, conversation history, accessibility controls
 - ADMIN: Also show role simulation panel
+- Dev mode (`NODE_ENV === 'development'`): Show role simulation panel for all authenticated users
 
 **SiteNav changes:**
 
@@ -1235,7 +1238,7 @@ POST /api/tts
 
 | ID | Requirement |
 |----|-------------|
-| SWITCH-1 | The role switcher MUST only be accessible to users with the ADMIN role. |
+| SWITCH-1 | The role switcher MUST only be accessible to users with the ADMIN role (exception: all authenticated users in `NODE_ENV === 'development'`). |
 | SWITCH-2 | The simulated role MUST be stored in a separate `lms_simulated_role` cookie, not the session. |
 | SWITCH-3 | The system MUST verify ADMIN role via `ValidateSessionInteractor` before accepting a switch request. |
 
@@ -1296,7 +1299,7 @@ POST /api/tts
 
 | ID | Requirement |
 |----|-------------|
-| NEG-ROLE-1 | Non-ADMIN users MUST NOT access the role-switcher endpoint — return 403. |
+| NEG-ROLE-1 | Non-ADMIN users MUST NOT access the role-switcher endpoint — return 403 (bypassed when `NODE_ENV === 'development'`). |
 | NEG-ROLE-2 | ANONYMOUS users MUST NOT access full chapter content, audio generation, or checklists. |
 | NEG-ROLE-3 | ANONYMOUS users MUST NOT access conversation history endpoints (`/api/conversations/*`). |
 | NEG-ROLE-4 | The system MUST NOT trust client-side role claims — all role determination happens server-side from the session. |

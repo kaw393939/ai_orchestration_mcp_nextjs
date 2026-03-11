@@ -2,32 +2,6 @@
 
 import type { RoleName } from "@/core/entities/user";
 
-export const ROLE_CONFIG: Record<
-  RoleName,
-  { label: string; dot: string; description: string }
-> = {
-  ANONYMOUS: {
-    label: "Anonymous",
-    dot: "bg-zinc-400",
-    description: "Public visitor — sales agent mode",
-  },
-  AUTHENTICATED: {
-    label: "Authenticated",
-    dot: "bg-[var(--status-success)]",
-    description: "Signed-in user — full library access",
-  },
-  STAFF: {
-    label: "Staff",
-    dot: "bg-blue-500",
-    description: "Staff analyst — user insights & KPIs",
-  },
-  ADMIN: {
-    label: "Admin",
-    dot: "bg-purple-500",
-    description: "Admin — global configuration access",
-  },
-};
-
 export function useMockAuth() {
   const switchRole = async (targetRole: RoleName) => {
     try {
@@ -42,8 +16,14 @@ export function useMockAuth() {
     }
   };
 
-  return {
-    switchRole,
-    ROLE_CONFIG,
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.reload();
+    } catch (err) {
+      console.error("Error logging out:", err);
+    }
   };
+
+  return { switchRole, logout };
 }

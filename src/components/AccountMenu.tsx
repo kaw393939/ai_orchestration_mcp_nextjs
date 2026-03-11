@@ -11,6 +11,32 @@ interface AccountMenuProps {
   user: SessionUser;
 }
 
+const ROLE_CONFIG: Record<
+  RoleName,
+  { label: string; dot: string; description: string }
+> = {
+  ANONYMOUS: {
+    label: "Anonymous",
+    dot: "bg-zinc-400",
+    description: "Public visitor — sales agent mode",
+  },
+  AUTHENTICATED: {
+    label: "Authenticated",
+    dot: "bg-[var(--status-success)]",
+    description: "Signed-in user — full library access",
+  },
+  STAFF: {
+    label: "Staff",
+    dot: "bg-blue-500",
+    description: "Staff analyst — user insights & KPIs",
+  },
+  ADMIN: {
+    label: "Admin",
+    dot: "bg-purple-500",
+    description: "Admin — global configuration access",
+  },
+};
+
 const SettingBlock = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div className="flex flex-col gap-2">
     <div className="text-[9px] font-bold uppercase tracking-widest opacity-60 ml-1">
@@ -41,7 +67,7 @@ export function AccountMenu({ user }: AccountMenuProps) {
   const [showSimulation, setShowSimulation] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
-  const { switchRole, ROLE_CONFIG } = useMockAuth();
+  const { switchRole, logout } = useMockAuth();
   const { 
     gridEnabled, 
     setGridEnabled, 
@@ -71,6 +97,8 @@ export function AccountMenu({ user }: AccountMenuProps) {
     .toUpperCase();
 
   const isAuth = user.roles.some((r) => r !== "ANONYMOUS");
+  const isDevMode = process.env.NODE_ENV === "development";
+  const canSimulate = user.roles.includes("ADMIN") || isDevMode;
 
   const updateAcc = <K extends keyof AccessibilitySettings>(
     key: K,
@@ -92,6 +120,26 @@ export function AccountMenu({ user }: AccountMenuProps) {
     { value: "normal", label: "Normal" },
     { value: "relaxed", label: "Relaxed" },
   ];
+
+  // Unauthenticated: show sign in / register links instead of menu
+  if (!isAuth) {
+    return (
+      <div className="flex items-center gap-3 ml-4">
+        <Link
+          href="/login"
+          className="text-[11px] font-bold opacity-60 hover:opacity-100 transition-opacity"
+        >
+          Sign In
+        </Link>
+        <Link
+          href="/register"
+          className="px-4 py-1.5 rounded-full text-[11px] font-bold bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
+        >
+          Register
+        </Link>
+      </div>
+    );
+  }
 
   const menuTrigger = (
     <button
@@ -190,7 +238,8 @@ export function AccountMenu({ user }: AccountMenuProps) {
             )}
           </div>
 
-          {/* Simulation Mode Accordion */}
+          {/* Simulation Mode Accordion — ADMIN or dev mode only */}
+          {canSimulate && (
           <div className="flex flex-col">
             <button
               onClick={() => setShowSimulation(!showSimulation)}
@@ -201,7 +250,7 @@ export function AccountMenu({ user }: AccountMenuProps) {
             </button>
             {showSimulation && (
               <div className="px-2 py-2 flex flex-col gap-1 animate-in fade-in slide-in-from-top-2">
-                {(Object.entries(ROLE_CONFIG) as [RoleName, any][]).map(([role, config]) => (
+                {(Object.entries(ROLE_CONFIG) as [RoleName, typeof ROLE_CONFIG[RoleName]][]).map(([role, config]) => (
                   <button
                     key={role}
                     onClick={() => switchRole(role)}
@@ -217,14 +266,15 @@ export function AccountMenu({ user }: AccountMenuProps) {
               </div>
             )}
           </div>
+          )}
 
           <div className="h-px bg-[var(--border-color)] mx-2 my-1" />
 
           <button
-            onClick={() => switchRole("ANONYMOUS")}
+            onClick={logout}
             className="w-full text-center py-2 text-label font-black opacity-60 hover:opacity-100 transition-opacity"
           >
-            {isAuth ? "Sign Out" : "Identity Simulation"}
+            Sign Out
           </button>
         </div>
       )}
