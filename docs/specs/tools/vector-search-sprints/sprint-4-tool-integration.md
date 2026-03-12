@@ -23,8 +23,15 @@ Currently exposes (added in Sprint 3):
 | `getSearchHandler(): SearchHandler` | Constructs full chain: HybridSearchHandler → BM25SearchHandler → LegacyKeywordHandler → EmptyResultHandler |
 | `getEmbeddingPipelineFactory()` | Factory for embedding pipelines (Sprint 2) |
 | `getBookPipeline()` | Book-chunk embedding pipeline (Sprint 2) |
-| `getToolRegistry()` | Tool registry with all tools |
+| `createToolRegistry(bookRepo)` | Creates registry from repo (used by tests with mock repo) |
+| `getToolRegistry()` | Singleton: calls `createToolRegistry(getBookRepository())` |
 | `getToolExecutor()` | Middleware-composed tool executor |
+
+> **Test constraint:** `tests/tool-registry.integration.test.ts` calls
+> `createToolRegistry(mockBookRepo)` with a mock repo and no DB connection.
+> Any changes to `createToolRegistry()` must remain backward-compatible —
+> the search handler parameter must be optional and the function must work
+> without `getSearchHandler()` being called.
 
 ### Key Types
 
@@ -77,7 +84,11 @@ pass it to `LibrarySearchInteractor`, and surface the enhanced
 
 ### Changes to `SearchBooksCommand`
 
+Add a second optional constructor parameter for the search handler:
+
 ```typescript
+import type { SearchHandler } from "@/core/search/ports/SearchHandler";
+
 export class SearchBooksCommand implements ToolCommand<{ query: string; max_results?: number }, unknown> {
   private readonly search: LibrarySearchInteractor;
   constructor(repo: BookRepository, searchHandler?: SearchHandler) {
@@ -89,7 +100,7 @@ export class SearchBooksCommand implements ToolCommand<{ query: string; max_resu
     if (results.length === 0) return `No results found for "${query}".`;
 
     return results.map(r => ({
-      // Existing fields preserved (backward compatible — VSEARCH-38):
+      // Existing fields (always present — VSEARCH-38):
       book: `${r.bookNumber}. ${r.bookTitle}`,
       bookNumber: r.bookNumber,
       chapter: r.chapterTitle,
@@ -97,10 +108,26 @@ export class SearchBooksCommand implements ToolCommand<{ query: string; max_resu
       bookSlug: r.bookSlug,
       matchContext: r.matchContext,
       relevance: r.relevance,
+      // Additive hybrid fields (present when hybrid search active):
+      ...(r.matchPassage !== undefined && {
+        matchPassage: r.matchPassage,
+        matchSection: r.matchSection,
+        matchHighlight: r.matchHighlight,
+        rrfScore: r.rrfScore,
+        vectorRank: r.vectorRank,
+        bm25Rank: r.bm25Rank,
+        passageOffset: r.passageOffset,
+      }),
     }));
   }
 }
 ```
+
+> **Import note:** `SearchHandler` is a port interface in `src/core/search/ports/`
+> — this import is core→core and does NOT violate the dependency rule. The
+> `search-books.tool.ts` factory must NEVER import from
+> `src/lib/chat/tool-composition-root.ts` (core must not depend on lib).
+> The composition root passes the handler in via parameter injection.
 
 > **Note on additive fields:** The `LibrarySearchResult` type currently maps
 > `matchPassage → matchContext` and `rrfScore → score`. To surface the enhanced
@@ -124,35 +151,13 @@ export interface LibrarySearchResult {
 }
 ```
 
-```typescript
-// Extended tool output (when hybrid fields present):
-return results.map(r => ({
-  // Existing fields (always present):
-  book: `${r.bookNumber}. ${r.bookTitle}`,
-  bookNumber: r.bookNumber,
-  chapter: r.chapterTitle,
-  chapterSlug: r.chapterSlug,
-  bookSlug: r.bookSlug,
-  matchContext: r.matchContext,
-  relevance: r.relevance,
-  // Additive fields (present when hybrid search active):
-  ...(r.matchPassage !== undefined && {
-    matchPassage: r.matchPassage,
-    matchSection: r.matchSection,
-    matchHighlight: r.matchHighlight,
-    rrfScore: r.rrfScore,
-    vectorRank: r.vectorRank,
-    bm25Rank: r.bm25Rank,
-    passageOffset: r.passageOffset,
-  }),
-}));
-```
-
 ### Changes to `search-books.tool.ts`
 
+Accept `searchHandler` as a parameter — do NOT import from composition root
+(core must not depend on lib):
+
 ```typescript
-import { getSearchHandler } from "@/lib/chat/tool-composition-root";
-// ... or accept searchHandler as a parameter from the composition root
+import type { SearchHandler } from "@/core/search/ports/SearchHandler";
 
 export function createSearchBooksTool(repo: BookRepository, searchHandler?: SearchHandler): ToolDescriptor {
   return {
@@ -242,14 +247,21 @@ export class RoleAwareSearchFormatter implements ToolResultFormatter {
 }
 ```
 
-### Tests (`tests/tool-registry/tool-result-formatter.test.ts`)
+### Tests (`tests/tool-result-formatter.test.ts`)
+
+> **Existing test impact:** The current `ANONYMOUS strips sensitive fields`
+> test asserts that ANON results do NOT contain `matchContext`, `bookSlug`, or
+> `chapterSlug`. The new formatter adds `matchSection` to the ANON allowlist.
+> The existing test assertions remain valid (those 3 fields are still stripped),
+> but the test fixture should be extended with hybrid fields so the new tests
+> can verify they are stripped too.
 
 Update existing formatter tests to cover hybrid fields:
 
 | Test ID | Scenario |
 | --- | --- |
 | — | AUTHENTICATED: hybrid fields pass through unchanged |
-| — | ANONYMOUS: matchPassage, matchHighlight, rrfScore, vectorRank, bm25Rank stripped |
+| — | ANONYMOUS: matchPassage, matchHighlight, rrfScore, vectorRank, bm25Rank, passageOffset stripped |
 | — | ANONYMOUS: matchSection preserved (safe metadata) |
 | — | Non-search tool results pass through unmodified |
 
@@ -274,22 +286,38 @@ exists (Sprint 3) — this task passes it through to the search tool.
 | **Reqs** | VSEARCH-35, VSEARCH-36 |
 
 > **Note:** The Sprint 3 composition root already builds the full chain in
-> `getSearchHandler()`. This task only adds one line — passing the handler
-> to `createSearchBooksTool()`.
+> `getSearchHandler()`. This task only adds the `searchHandler` parameter
+> to `createToolRegistry` and passes it through to `createSearchBooksTool()`.
+
+> **Backward-compatibility constraint:** `createToolRegistry(bookRepo)` is
+> used in `tests/tool-registry.integration.test.ts` with a mock repo and
+> NO real database. The `searchHandler` parameter MUST be optional so that
+> existing test code `createToolRegistry(mockBookRepo)` continues to compile
+> and run without opening a DB connection.
 
 ### Changes
 
 ```typescript
-export function createToolRegistry(bookRepo: BookRepository): ToolRegistry {
+// Signature change: add optional searchHandler parameter
+export function createToolRegistry(
+  bookRepo: BookRepository,
+  searchHandler?: SearchHandler,
+): ToolRegistry {
   const reg = new ToolRegistry(new RoleAwareSearchFormatter());
 
   // ... stateless tools unchanged ...
 
-  // Book tools — now with hybrid search handler
-  reg.register(createSearchBooksTool(bookRepo, getSearchHandler()));
+  // Book tools — now with optional hybrid search handler
+  reg.register(createSearchBooksTool(bookRepo, searchHandler));
   // ... other book tools unchanged ...
 
   return reg;
+}
+
+// Singleton accessor wires the real searchHandler:
+export function getToolRegistry(): ToolRegistry {
+  // ... existing singleton logic ...
+  return createToolRegistry(getBookRepository(), getSearchHandler());
 }
 ```
 
@@ -343,10 +371,11 @@ npm run build && npm test                               # all tests green
 - [ ] `LibrarySearchResult` extended with optional hybrid fields (additive)
 - [ ] `LibrarySearchInteractor` hybrid path populates new optional fields
 - [ ] `SearchBooksCommand` accepts optional `SearchHandler` via constructor
-- [ ] `search-books.tool.ts` passes `getSearchHandler()` to command
+- [ ] `search-books.tool.ts` accepts optional `searchHandler` param, passes to command
 - [ ] `SearchBooksCommand` output includes hybrid fields when present
 - [ ] `RoleAwareSearchFormatter` strips hybrid fields for ANONYMOUS
-- [ ] Composition root passes `getSearchHandler()` to tool registration
+- [ ] `createToolRegistry(bookRepo, searchHandler?)` — optional param, backward-compatible
+- [ ] `getToolRegistry()` singleton wires `getSearchHandler()` at call site
 - [ ] Integration tests: command → hybrid search → formatted output (~8 tests)
 - [ ] Existing `search_books` API contract unchanged (VSEARCH-38)
 - [ ] All existing tests unmodified and passing (VSEARCH-39)
