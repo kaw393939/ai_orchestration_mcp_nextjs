@@ -511,16 +511,16 @@ npm run build && npm test   # all existing search tests still pass (VSEARCH-39)
 
 ## Sprint 3 — Completion Checklist
 
-- [ ] 3 query processing steps + `QueryProcessor` compositor (GoF-3)
-- [ ] Stopword set (~90 entries) + synonym map (~40-60 entries)
-- [ ] `HybridSearchEngine` with dual query processors (GB-3)
-- [ ] `SearchHandlerChain` with 4 handlers (GoF-1)
-- [ ] Result formatting: highlight, deduplication, relevance assignment
-- [ ] `LibrarySearchInteractor` accepts optional search handler (VSEARCH-38)
-- [ ] Composition root wiring: `getSearchHandler()` factory exposed
-- [ ] ~21 new tests passing
-- [ ] Full fallback chain working: hybrid → BM25-only → legacy → empty
-- [ ] `npm run build && npm test` — all tests green (existing + new)
+- [x] 3 query processing steps + `QueryProcessor` compositor (GoF-3)
+- [x] Stopword set (~90 entries) + synonym map (~40-60 entries)
+- [x] `HybridSearchEngine` with dual query processors (GB-3)
+- [x] `SearchHandlerChain` with 4 handlers (GoF-1)
+- [x] Result formatting: highlight, deduplication, relevance assignment
+- [x] `LibrarySearchInteractor` accepts optional search handler (VSEARCH-38)
+- [x] Composition root wiring: `getSearchHandler()` factory exposed
+- [x] ~32 new tests passing (7 query + 8 engine + 5 chain + 12 formatter)
+- [x] Full fallback chain working: hybrid → BM25-only → legacy → empty
+- [x] `npm run build && npm test` — all 282 tests green (250 existing + 32 new)
 
 ---
 

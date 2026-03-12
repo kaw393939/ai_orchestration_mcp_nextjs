@@ -1,6 +1,7 @@
 import { UseCase } from "../common/UseCase";
 import { BookQuery, ChapterQuery } from "./BookRepository";
 import { LibrarySearchResult } from "../entities/library";
+import type { SearchHandler } from "../search/ports/SearchHandler";
 
 export interface SearchRequest {
   query: string;
@@ -8,10 +9,28 @@ export interface SearchRequest {
 }
 
 export class LibrarySearchInteractor implements UseCase<SearchRequest, LibrarySearchResult[]> {
-  constructor(private bookRepository: BookQuery & ChapterQuery) {}
+  constructor(
+    private bookRepository: BookQuery & ChapterQuery,
+    private searchHandler?: SearchHandler,
+  ) {}
 
   async execute(request: SearchRequest): Promise<LibrarySearchResult[]> {
     const { query, maxResults = 10 } = request;
+
+    if (this.searchHandler) {
+      const hybridResults = await this.searchHandler.search(query);
+      return hybridResults.slice(0, maxResults).map((hr) => ({
+        bookTitle: hr.bookTitle,
+        bookNumber: hr.bookNumber,
+        bookSlug: hr.bookSlug,
+        chapterTitle: hr.chapterTitle,
+        chapterSlug: hr.chapterSlug,
+        matchContext: hr.matchPassage,
+        relevance: hr.relevance,
+        score: hr.rrfScore,
+      }));
+    }
+
     const queryLower = query.toLowerCase();
     const queryTerms = queryLower.split(/\s+/).filter((t) => t.length > 2);
 
