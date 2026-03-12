@@ -5,6 +5,7 @@
   "scripts": {
     "prestart": "npm run validate:env",
     "dev": "next dev",
+    "prebuild": "npm run build:search-index",
     "build": "next build",
     "build:search-index": "tsx scripts/build-search-index.ts",
     "build:search-index:force": "tsx scripts/build-search-index.ts --force",

@@ -310,4 +310,27 @@ describe("EmbeddingPipelineFactory", () => {
       "ConversationChunker not yet implemented",
     );
   });
+
+  // TEST-VS-25: On-demand indexDocument() embeds a single chapter end-to-end
+  it("on-demand single-chapter indexing via factory pipeline", async () => {
+    const store = new InMemoryVectorStore();
+    const factory = new EmbeddingPipelineFactory(
+      new MockEmbedder(),
+      store,
+      MODEL_VERSION,
+    );
+    const pipeline = factory.createForSource("book_chunk");
+
+    const result = await pipeline.indexDocument({
+      sourceType: "book_chunk",
+      sourceId: "ux-design/chapter-3",
+      content: chapterContent,
+      contentHash: "hash-ondemand",
+      metadata,
+    });
+
+    expect(result.status).toBe("created");
+    expect(result.chunksUpserted).toBeGreaterThan(0);
+    expect(store.getBySourceId("ux-design/chapter-3").length).toBeGreaterThan(0);
+  });
 });
