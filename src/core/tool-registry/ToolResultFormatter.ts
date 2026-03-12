@@ -14,6 +14,7 @@ export class RoleAwareSearchFormatter implements ToolResultFormatter {
         bookNumber: r.bookNumber,
         chapter: r.chapterTitle ?? r.chapter,
         relevance: r.relevance,
+        matchSection: r.matchSection ?? null,
       }));
     }
     return result;

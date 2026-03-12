@@ -17,6 +17,25 @@ const fullResults = [
   },
 ];
 
+const hybridResults = [
+  {
+    book: "1. Software Engineering",
+    bookNumber: "1",
+    chapter: "Intro",
+    chapterSlug: "intro",
+    bookSlug: "software-engineering",
+    matchContext: "some context...",
+    relevance: "high",
+    matchPassage: "A long passage about software engineering...",
+    matchSection: "Introduction",
+    matchHighlight: "A long passage about **software engineering**...",
+    rrfScore: 0.85,
+    vectorRank: 1,
+    bm25Rank: 3,
+    passageOffset: { start: 0, end: 200 },
+  },
+];
+
 describe("RoleAwareSearchFormatter", () => {
   const formatter = new RoleAwareSearchFormatter();
 
@@ -44,5 +63,34 @@ describe("RoleAwareSearchFormatter", () => {
     const data = { operation: "add", a: 2, b: 3, result: 5 };
     const result = formatter.format("calculator", data, anonCtx);
     expect(result).toEqual(data);
+  });
+
+  // TEST-FMT-04
+  it("AUTH search result preserves hybrid fields unchanged", () => {
+    const result = formatter.format("search_books", hybridResults, authCtx);
+    expect(result).toEqual(hybridResults);
+  });
+
+  // TEST-FMT-05
+  it("ANON search result strips hybrid fields but preserves matchSection", () => {
+    const result = formatter.format("search_books", hybridResults, anonCtx) as Record<string, unknown>[];
+    expect(result).toHaveLength(1);
+    expect(result[0]).toHaveProperty("matchSection", "Introduction");
+    expect(result[0]).not.toHaveProperty("matchPassage");
+    expect(result[0]).not.toHaveProperty("matchHighlight");
+    expect(result[0]).not.toHaveProperty("rrfScore");
+    expect(result[0]).not.toHaveProperty("vectorRank");
+    expect(result[0]).not.toHaveProperty("bm25Rank");
+    expect(result[0]).not.toHaveProperty("passageOffset");
+    expect(result[0]).not.toHaveProperty("matchContext");
+    expect(result[0]).not.toHaveProperty("bookSlug");
+    expect(result[0]).not.toHaveProperty("chapterSlug");
+  });
+
+  // TEST-FMT-06
+  it("ANON search result has matchSection null when not present", () => {
+    const noSectionResults = [{ ...hybridResults[0], matchSection: undefined }];
+    const result = formatter.format("search_books", noSectionResults, anonCtx) as Record<string, unknown>[];
+    expect(result[0]).toHaveProperty("matchSection", null);
   });
 });

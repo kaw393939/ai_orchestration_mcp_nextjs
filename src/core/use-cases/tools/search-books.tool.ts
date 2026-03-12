@@ -1,8 +1,9 @@
 import type { ToolDescriptor } from "@/core/tool-registry/ToolDescriptor";
 import type { BookRepository } from "../BookRepository";
+import type { SearchHandler } from "@/core/search/ports/SearchHandler";
 import { SearchBooksCommand } from "./BookTools";
 
-export function createSearchBooksTool(repo: BookRepository): ToolDescriptor {
+export function createSearchBooksTool(repo: BookRepository, searchHandler?: SearchHandler): ToolDescriptor {
   return {
     name: "search_books",
     schema: {
@@ -16,7 +17,7 @@ export function createSearchBooksTool(repo: BookRepository): ToolDescriptor {
         required: ["query"],
       },
     },
-    command: new SearchBooksCommand(repo),
+    command: new SearchBooksCommand(repo, searchHandler),
     roles: "ALL",
     category: "content",
   };

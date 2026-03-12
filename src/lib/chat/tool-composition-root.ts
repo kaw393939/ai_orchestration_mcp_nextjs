@@ -47,7 +47,7 @@ let searchHandler: SearchHandler | null = null;
 
 const MODEL_VERSION = "all-MiniLM-L6-v2@1.0";
 
-export function createToolRegistry(bookRepo: BookRepository): ToolRegistry {
+export function createToolRegistry(bookRepo: BookRepository, handler?: SearchHandler): ToolRegistry {
   const reg = new ToolRegistry(new RoleAwareSearchFormatter());
 
   // Stateless tools (no deps)
@@ -59,7 +59,7 @@ export function createToolRegistry(bookRepo: BookRepository): ToolRegistry {
   reg.register(generateAudioTool);
 
   // Book tools (need BookRepository)
-  reg.register(createSearchBooksTool(bookRepo));
+  reg.register(createSearchBooksTool(bookRepo, handler));
   reg.register(createGetChapterTool(bookRepo));
   reg.register(createGetChecklistTool(bookRepo));
   reg.register(createListPractitionersTool(bookRepo));
@@ -70,7 +70,7 @@ export function createToolRegistry(bookRepo: BookRepository): ToolRegistry {
 
 export function getToolRegistry(): ToolRegistry {
   if (!registry) {
-    registry = createToolRegistry(getBookRepository());
+    registry = createToolRegistry(getBookRepository(), getSearchHandler());
   }
   return registry;
 }

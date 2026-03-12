@@ -1,6 +1,7 @@
 import { ToolCommand } from "../ToolCommand";
 import type { BookRepository } from "../BookRepository";
 import type { ToolExecutionContext } from "@/core/tool-registry/ToolExecutionContext";
+import type { SearchHandler } from "@/core/search/ports/SearchHandler";
 import { LibrarySearchInteractor } from "../LibrarySearchInteractor";
 import { GetChapterInteractor } from "../GetChapterInteractor";
 import { ChecklistInteractor } from "../ChecklistInteractor";
@@ -9,7 +10,9 @@ import { BookSummaryInteractor } from "../BookSummaryInteractor";
 
 export class SearchBooksCommand implements ToolCommand<{ query: string; max_results?: number }, unknown> {
   private readonly search: LibrarySearchInteractor;
-  constructor(repo: BookRepository) { this.search = new LibrarySearchInteractor(repo); }
+  constructor(repo: BookRepository, searchHandler?: SearchHandler) {
+    this.search = new LibrarySearchInteractor(repo, searchHandler);
+  }
 
   async execute({ query, max_results = 5 }: { query: string; max_results?: number }, _context?: ToolExecutionContext) {
     const results = await this.search.execute({ query, maxResults: Math.min(max_results, 15) });
@@ -23,6 +26,15 @@ export class SearchBooksCommand implements ToolCommand<{ query: string; max_resu
       bookSlug: r.bookSlug,
       matchContext: r.matchContext,
       relevance: r.relevance,
+      ...(r.matchPassage !== undefined && {
+        matchPassage: r.matchPassage,
+        matchSection: r.matchSection,
+        matchHighlight: r.matchHighlight,
+        rrfScore: r.rrfScore,
+        vectorRank: r.vectorRank,
+        bm25Rank: r.bm25Rank,
+        passageOffset: r.passageOffset,
+      }),
     }));
   }
 }

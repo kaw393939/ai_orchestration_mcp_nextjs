@@ -65,6 +65,14 @@ export interface LibrarySearchResult {
   matchContext: string;
   relevance: "high" | "medium" | "low";
   score: number;
+  // Optional hybrid search fields (populated when hybrid search is active)
+  matchPassage?: string;
+  matchSection?: string | null;
+  matchHighlight?: string;
+  rrfScore?: number;
+  vectorRank?: number | null;
+  bm25Rank?: number | null;
+  passageOffset?: { start: number; end: number };
 }
 
 export interface Practitioner {

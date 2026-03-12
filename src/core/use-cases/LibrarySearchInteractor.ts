@@ -28,6 +28,13 @@ export class LibrarySearchInteractor implements UseCase<SearchRequest, LibrarySe
         matchContext: hr.matchPassage,
         relevance: hr.relevance,
         score: hr.rrfScore,
+        matchPassage: hr.matchPassage,
+        matchSection: hr.matchSection,
+        matchHighlight: hr.matchHighlight,
+        rrfScore: hr.rrfScore,
+        vectorRank: hr.vectorRank,
+        bm25Rank: hr.bm25Rank,
+        passageOffset: hr.passageOffset,
       }));
     }
 
