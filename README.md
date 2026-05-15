@@ -1,3 +1,25 @@
+# AI Orchestration Product Library
+
+<!-- portfolio-curation -->
+## Portfolio Overview
+Product development library and reference project for spec-driven AI orchestration work.
+
+## What This Demonstrates
+- Product systems
+- AI orchestration
+- specification-driven delivery
+
+## Stack
+TypeScript, Next.js
+
+## Portfolio Status
+This repository is part of Keith Williams' curated public portfolio. The README has been updated to explain the project purpose, technical focus, and why the work is worth reviewing.
+<!-- /portfolio-curation -->
+
+---
+
+## Original Notes
+
 # The Product Development Library
 
 <div align="center">
@@ -224,3 +246,4 @@ See [`docs/operations/`](docs/operations/) for runbooks, environment matrix, and
 | Operations runbooks | [`docs/operations/`](docs/operations/) |
 | Sprint archive (23 sprints) | [`sprints/completed/`](sprints/completed/) |
 | Runtime scripts (10) | [`scripts/`](scripts/) |
+
